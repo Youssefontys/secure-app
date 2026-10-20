@@ -1,0 +1,8 @@
+# The real secrets. The template without values is .env.example.
+.env
+
+# Bytecode that Python makes when you run the code outside the container.
+__pycache__/
+
+# Virtual environment, if you run the app or tests outside Docker.
+.venv/
