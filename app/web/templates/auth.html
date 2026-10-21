@@ -13,9 +13,15 @@
       <label>Username
         <input name="username" autocomplete="username" required>
       </label>
-      <label>Password
-        <input name="password" type="password" autocomplete="{{ 'current-password' if login else 'new-password' }}" required>
-      </label>
+      {% if login %}
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+      {% else %}
+        <label>Password <small>({{ PASSWORD_MIN }} to {{ PASSWORD_MAX }} characters)</small>
+          <input name="password" type="password" autocomplete="new-password" minlength="{{ PASSWORD_MIN }}" maxlength="{{ PASSWORD_MAX }}" required>
+        </label>
+      {% endif %}
       <button type="submit">{{ "Log in" if login else "Create account" }}</button>
     </form>
   </div>
@@ -23,6 +29,7 @@
   <nav class="auth-links hint" aria-label="Account options">
     {% if login %}
       <a href="{{ url_for('auth.register') }}">No account yet? Register</a>
+      <a href="{{ url_for('auth.forgot_password') }}">Forgot your password?</a>
     {% else %}
       <a href="{{ url_for('auth.login') }}">Already have an account? Log in</a>
     {% endif %}

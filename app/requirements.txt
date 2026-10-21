@@ -1,2 +1,3 @@
 flask               # Web framework
 psycopg[binary]     # PostgreSQL driver
+segno               # QR code for setting up two-step verification
