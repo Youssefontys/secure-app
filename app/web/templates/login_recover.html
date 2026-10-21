@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Log in with your recovery code{% endblock %}
+{% block body_class %}auth{% endblock %}
+{% block scene %}{% include "_scene.html" %}{% endblock %}
+
+{% block content %}
+  <h1>Recovery code</h1>
+
+  <div class="card">
+    <p class="hint">Enter your recovery code. Two-step verification is then off, and you set it up again.</p>
+    <form method="post">
+      <label>Recovery code
+        <input name="code" autocomplete="off" spellcheck="false" maxlength="64" required autofocus>
+      </label>
+      <button type="submit">Log in</button>
+    </form>
+  </div>
+
+  <nav class="auth-links hint" aria-label="Account options">
+    <a href="{{ url_for('auth.login_code') }}">Use the code from the app instead</a>
+  </nav>
+{% endblock %}

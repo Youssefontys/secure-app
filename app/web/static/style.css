@@ -286,6 +286,12 @@ button:hover, .button:hover {
 
 /* Off while the form is not valid (forms.js). No hover, no click. */
 button:disabled { opacity: 0.45; pointer-events: none; }
+/* A button that is not allowed yet, like Continue at the recovery code while the box is unchecked. */
+.button[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+/* A checkbox next to its text, not above it. */
+label.check { display: flex; align-items: center; gap: 0.6rem; }
+label.check input { width: auto; margin: 0; }
+.recovery-actions { margin: 0.9rem 0 0.4rem; }
 
 button.secondary, .button.secondary {
   border-color: var(--border);

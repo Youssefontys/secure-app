@@ -14,9 +14,10 @@ The baseline only does what is needed to be functional: register, log in, log ou
 
 ## Structure
 
-- `app/` - the notes application: `app.py` creates the app, `db.py` talks to the database, `auth.py` handles registering and logging in, `account.py` the profile, `notes.py` the notes. The website (HTML, CSS, JS) is in `app/web/`
+- `app/` - the notes application: `app.py` creates the app, `db.py` talks to the database, `auth.py` handles registering and logging in (including the second step), `account.py` the profile, `notes.py` the notes, `totp.py` the TOTP calculation, `throttle.py` the attempt limits, `passwords.py` the rule for a new password. The website (HTML, CSS, JS) is in `app/web/`
 - `db/` - the database schema, run by the database container on its first start
 - `compose.yaml` - app and database for local use
+- `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
 ## Run it
 
@@ -27,6 +28,16 @@ docker compose up --build --wait
 ```
 
 The app is on http://127.0.0.1:5000. After a change to `db/schema.sql`, remove the database volume first with `docker compose down -v`.
+
+With the stack running, the security test empties the local accounts and checks every mitigation:
+
+```bash
+python -u tests/securitytest.py --wipe
+```
+
+## Status
+
+- Week 5, authentication: a new password of 12 to 64 characters; two-step verification with TOTP, required after the first password, where every code works once; attempt limits per name and per address on the password, the code and the recovery code; a recovery code, and forgot password with two of the three factors; old sessions end on logout and when the password or the second factor changes; changing the password, deleting the account and replacing the second factor ask for the current password and a code
 
 ## Branches
 
