@@ -21,6 +21,8 @@ bp = Blueprint("auth", __name__)
 PENDING_MAX_SECONDS = 300
 CodeError = namedtuple("CodeError", "message minutes")
 SETUP_ENDPOINTS = {"account.setup_2fa", "account.qr_2fa"}
+# The only routes without a login; every other route is closed by default (MIT-24).
+PUBLIC_ENDPOINTS = {"auth.register", "auth.login", "auth.login_code", "auth.login_recover", "auth.forgot_password", "auth.logout", "static"}
 FORGOT_WRONG = "Username, recovery code or code is incorrect."
 
 
@@ -51,15 +53,17 @@ def keep_this_session(row):
     session["session_version"] = row.session_version
 
 
-def login_required(view):
-    @wraps(view)
-    def wrapper(*args, **kwargs):
-        if g.user is None:
-            return redirect(url_for("auth.login"))
-        if not g.user.totp_enabled and request.endpoint not in SETUP_ENDPOINTS:
-            return redirect(url_for("account.setup_2fa"))
-        return view(*args, **kwargs)
-    return wrapper
+# Closed by default (MIT-24): logged in and with two-step verification, otherwise only the setup (MIT-12).
+# A new route is thus never open by accident; only PUBLIC_ENDPOINTS may go without a login. After load_user.
+@bp.before_app_request
+def require_login():
+    if request.endpoint in PUBLIC_ENDPOINTS or request.endpoint is None:
+        return None
+    if g.user is None:
+        return redirect(url_for("auth.login"))
+    if not g.user.totp_enabled and request.endpoint not in SETUP_ENDPOINTS:
+        return redirect(url_for("account.setup_2fa"))
+    return None
 
 
 # Whoever is already logged in does not need to log in or register again.

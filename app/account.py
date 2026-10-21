@@ -8,7 +8,7 @@ from flask import Blueprint, Response, abort, flash, g, redirect, render_templat
 import passwords
 import throttle
 import totp
-from auth import check_code, keep_this_session, login_required, new_recovery_code
+from auth import check_code, keep_this_session, new_recovery_code
 from db import query
 
 bp = Blueprint("account", __name__, url_prefix="/account")
@@ -24,7 +24,6 @@ def no_store(response):
 
 
 @bp.route("")
-@login_required
 def index():
     return render_account()
 
@@ -40,7 +39,6 @@ def render_account(error=None, status=200, headers=None):
 
 
 @bp.route("/2fa", methods=["GET", "POST"])
-@login_required
 def setup_2fa():
     if g.user.totp_enabled:
         return redirect(url_for("account.index"))
@@ -65,7 +63,6 @@ def setup_2fa():
 
 
 @bp.route("/2fa/recovery", methods=["POST"])
-@login_required
 def new_recovery():
     # Password and code: with the session and one code, a recovery code is half of a new password.
     if refused := refuse_without_both_factors():
@@ -74,7 +71,6 @@ def new_recovery():
 
 
 @bp.route("/2fa/qr.svg")
-@login_required
 def qr_2fa():
     # Only while the setup runs; after that the secret can no longer be requested.
     user = query("SELECT username, totp_secret FROM users WHERE id = %s AND NOT totp_enabled", (g.user.id,), one=True)
@@ -87,7 +83,6 @@ def qr_2fa():
 
 # Set up again for a new phone
 @bp.route("/2fa/reset", methods=["POST"])
-@login_required
 def reset_2fa():
     # Password and code
     if refused := refuse_without_both_factors():
@@ -116,7 +111,6 @@ def refuse_without_both_factors():
 
 
 @bp.route("/password", methods=["POST"])
-@login_required
 def change_password():
     password = request.form.get("password", "")
     if error := passwords.password_problem(password, request.form.get("password_repeat", "")):
@@ -134,7 +128,6 @@ def change_password():
 
 
 @bp.route("/delete", methods=["POST"])
-@login_required
 def delete_account():
     if refused := refuse_without_both_factors():
         return refused
