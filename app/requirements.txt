@@ -1,0 +1,2 @@
+flask               # Web framework
+psycopg[binary]     # PostgreSQL driver

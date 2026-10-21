@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{# Logging in and registering are the same form; only the texts differ. #}
+{% set login = request.endpoint == "auth.login" %}
+{% block title %}{{ "Log in" if login else "Register" }}{% endblock %}
+{% block body_class %}auth{% endblock %}
+{% block scene %}{% include "_scene.html" %}{% endblock %}
+
+{% block content %}
+  <h1>{{ "Log in" if login else "Create account" }}</h1>
+
+  <div class="card">
+    <form method="post">
+      <label>Username
+        <input name="username" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="{{ 'current-password' if login else 'new-password' }}" required>
+      </label>
+      <button type="submit">{{ "Log in" if login else "Create account" }}</button>
+    </form>
+  </div>
+
+  <nav class="auth-links hint" aria-label="Account options">
+    {% if login %}
+      <a href="{{ url_for('auth.register') }}">No account yet? Register</a>
+    {% else %}
+      <a href="{{ url_for('auth.login') }}">Already have an account? Log in</a>
+    {% endif %}
+  </nav>
+{% endblock %}

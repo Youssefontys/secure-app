@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Edit note{% endblock %}
+
+{% block content %}
+  <header class="bar">
+    <h1>Edit note</h1>
+    <a href="{{ url_for('notes.index') }}">Cancel</a>
+  </header>
+
+  <form method="post" class="card" data-validate>
+    {% include "_note_fields.html" %}
+    <button type="submit">Save changes</button>
+  </form>
+{% endblock %}

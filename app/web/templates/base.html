@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Notes{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+{# Pages choose their own mode: "auth" gets the full theme with the
+   figure, "app" the calmer variant after logging in. #}
+<body class="{% block body_class %}app{% endblock %}">
+  <main>
+    {# One place for messages: an error message the route passes along, and
+       messages a previous page has set up with flash(). #}
+    {% if error %}<p role="alert" tabindex="-1" class="error">{{ error }}</p>{% endif %}
+    {% for message in get_flashed_messages() %}
+      <p class="notice">{{ message }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+
+  {# Only the login and registration pages include the scene. #}
+  {% block scene %}{% endblock %}
+
+  {# Separate files and no inline script, so a strict CSP later needs no exception for them.
+     defer, so the page does not wait for them. #}
+  <script src="{{ url_for('static', filename='cyber.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='account-menu.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='forms.js') }}" defer></script>
+</body>
+</html>
