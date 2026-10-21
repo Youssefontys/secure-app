@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Profile{% endblock %}
+
+{% block content %}
+  <header class="bar">
+    <h1>Profile</h1>
+    <a href="{{ url_for('notes.index') }}">Back to notes</a>
+  </header>
+
+  <dl class="card profile-details">
+    <dt>Username</dt>
+    <dd>{{ profile.username }}</dd>
+    <dt>Member since</dt>
+    <dd>{{ profile.created_at|date(with_time=False) }}</dd>
+    <dt>Notes</dt>
+    <dd>{{ profile.note_count }}</dd>
+  </dl>
+
+  <form method="post" action="{{ url_for('account.change_password') }}" class="card">
+    <h2>Change password</h2>
+    <label>New password
+      <input name="password" type="password" autocomplete="new-password" required>
+    </label>
+    <label>Repeat the new password
+      <input name="password_repeat" type="password" autocomplete="new-password" required>
+    </label>
+    <button type="submit">Save password</button>
+  </form>
+
+  <form method="post" action="{{ url_for('account.delete_account') }}" class="card"
+        data-confirm="Your account and all your notes will be deleted for good. Continue?">
+    <h2>Delete account</h2>
+    <p class="hint">Your account and all your notes will be deleted for good. This cannot be undone.</p>
+    <button type="submit" class="danger">Delete account</button>
+  </form>
+{% endblock %}

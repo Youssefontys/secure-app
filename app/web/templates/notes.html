@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}My notes{% endblock %}
+
+{% block content %}
+  <header class="bar">
+    <div>
+      <p class="eyebrow">My notes</p>
+      <h1>{{ greeting() }}, {{ g.user.username }}</h1>
+    </div>
+    {% include "_account_menu.html" %}
+  </header>
+
+  <details class="card composer"{% if not notes or error %} open{% endif %}>
+    <summary>New note</summary>
+    <form method="post" data-validate>
+      {% include "_note_fields.html" %}
+      <button type="submit">Save</button>
+    </form>
+  </details>
+
+  <p class="count">{{ notes|length }} notes</p>
+
+  {# Jinja escapes the values below by default, so a note with a
+     script tag in it shows up as text (MIT-01). Never use |safe here. #}
+  <div class="notes-grid">
+    {% for note in notes %}
+      <article class="card note">
+        <h2>{{ note.title }}</h2>
+        <p class="note-body">{{ note.body }}</p>
+        <div class="note-meta">
+          <small>{{ note.created_at|date }}{% if note.updated_at %} · edited {{ note.updated_at|date }}{% endif %}</small>
+          <div class="note-actions">
+            <a class="button secondary" href="{{ url_for('notes.edit_note', note_id=note.id) }}">Edit</a>
+            <form method="post" action="{{ url_for('notes.delete_note', note_id=note.id) }}" data-confirm="Delete this note?">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </div>
+      </article>
+    {% else %}
+      <p class="empty">No notes yet.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

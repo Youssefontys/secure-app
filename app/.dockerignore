@@ -1,0 +1,6 @@
+# Bytecode from local run does not belong in the image;
+__pycache__/
+
+# The build files themselves do nothing in the running container.
+Dockerfile
+.dockerignore
