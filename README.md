@@ -38,10 +38,11 @@ python -u tests/securitytest.py --wipe
 ## Status
 
 - Week 5, authentication: a new password of 12 to 64 characters; two-step verification with TOTP, required after the first password, where every code works once; attempt limits per name and per address on the password, the code and the recovery code; a recovery code, and forgot password with two of the three factors; old sessions end on logout and when the password or the second factor changes; changing the password, deleting the account and replacing the second factor ask for the current password and a code
+- Week 5, authorization: every route is closed by default, except a short list of public ones, so a new route is never open by accident; a note of someone else gives 404 on opening, editing and deleting
 
 ## Branches
 
-Every topic is a branch from `main`, such as `week-5/authentication`. It is merged with a merge commit, so the commit hashes the BoK refers to stay valid, and then deleted. Measurements for the research run on `lab/` branches: they are tagged, never merged, and deleted.
+Every topic is a branch from `main`, such as `week-5/authentication`, or stacked on an open branch it depends on, with that branch as the base of its pull request. It is merged with a merge commit, so the commit hashes the BoK refers to stay valid, and then deleted. Measurements for the research run on `lab/` branches: they are tagged, never merged, and deleted.
 
 ## License
 
