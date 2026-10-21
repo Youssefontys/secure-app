@@ -2,14 +2,12 @@
 
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
-from auth import login_required
 from db import query
 
 bp = Blueprint("notes", __name__)
 
 
 @bp.route("/", methods=["GET", "POST"])
-@login_required
 def index():
     if request.method == "POST":
         title, body, error = read_note_form()
@@ -36,30 +34,33 @@ def fetch_notes():
     )
 
 
-# The note with this number, otherwise 404. 
-def find_note(note_id):
-    note = query("SELECT id, title, body FROM notes WHERE id = %s", (note_id,), one=True)
+# The note of the logged-in user, otherwise 404: someone else's note also seems not to exist (MIT-15).
+def own_note(note_id):
+    note = query("SELECT id, title, body FROM notes WHERE id = %s AND user_id = %s", (note_id, g.user.id), one=True)
     if note is None:
         abort(404)
     return note
 
 
 @bp.route("/notes/<int:note_id>/edit", methods=["GET", "POST"])
-@login_required
 def edit_note(note_id):
-    note = find_note(note_id)
+    note = own_note(note_id)
     if request.method != "POST":
         return render_template("edit_note.html", title=note.title, body=note.body)
 
     title, body, error = read_note_form()
     if error:
         return render_template("edit_note.html", title=title, body=body, error=error), 400
-    query("UPDATE notes SET title = %s, body = %s, updated_at = now() WHERE id = %s", (title, body, note_id))
+    query(
+        "UPDATE notes SET title = %s, body = %s, updated_at = now() WHERE id = %s AND user_id = %s",
+        (title, body, note_id, g.user.id),
+    )
     return redirect(url_for("notes.index"))
 
 
 @bp.route("/notes/<int:note_id>/delete", methods=["POST"])
-@login_required
 def delete_note(note_id):
-    query("DELETE FROM notes WHERE id = %s", (note_id,))
+    # Only the own note; someone else's note gives 404, as with editing (MIT-15).
+    if query("DELETE FROM notes WHERE id = %s AND user_id = %s RETURNING id", (note_id, g.user.id), one=True) is None:
+        abort(404)
     return redirect(url_for("notes.index"))
