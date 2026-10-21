@@ -15,7 +15,7 @@ import urllib.error, urllib.parse, urllib.request
 # The tests import their helpers from this file. As a script it is called __main__; this way it is the same module
 # under both names, with the same results.
 sys.modules.setdefault("securitytest", sys.modules[__name__])
-TESTS = ("twofactor", "password", "bruteforce")
+TESTS = ("twofactor", "password", "bruteforce", "note", "appsec")
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 B = "http://127.0.0.1:5000"
