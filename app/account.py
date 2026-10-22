@@ -5,6 +5,7 @@ import io
 import segno
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
+import encryption
 import passwords
 import throttle
 import totp
@@ -43,9 +44,15 @@ def setup_2fa():
     if g.user.totp_enabled:
         return redirect(url_for("account.index"))
     # A new secret only counts after a first valid code, so you do not lock yourself out.
+    # The secret is only stored encrypted in the database (MIT-17).
     query("UPDATE users SET totp_secret = %s, totp_last_step = NULL WHERE id = %s AND totp_secret IS NULL",
-          (totp.new_secret(), g.user.id))
-    secret = query("SELECT totp_secret FROM users WHERE id = %s", (g.user.id,), one=True).totp_secret
+          (encryption.encrypt(totp.new_secret(), "totp_secret", g.user.id), g.user.id))
+    user = query("SELECT totp_secret FROM users WHERE id = %s", (g.user.id,), one=True)
+    secret = encryption.decrypt(user.totp_secret, "totp_secret", g.user.id)
+    # No longer decrypts (for example a new key): the secret did not work anywhere yet, so start again.
+    if secret is None:
+        query("UPDATE users SET totp_secret = NULL WHERE id = %s AND NOT totp_enabled", (g.user.id,))
+        return redirect(url_for("account.setup_2fa"))
     # The key in groups of four, to type over if scanning does not work.
     grouped = " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))
     if request.method != "POST":
@@ -74,10 +81,11 @@ def new_recovery():
 def qr_2fa():
     # Only while the setup runs; after that the secret can no longer be requested.
     user = query("SELECT username, totp_secret FROM users WHERE id = %s AND NOT totp_enabled", (g.user.id,), one=True)
-    if not (user and user.totp_secret):
+    secret = user and user.totp_secret and encryption.decrypt(user.totp_secret, "totp_secret", g.user.id)
+    if not secret:
         abort(404)
     svg = io.BytesIO()
-    segno.make(totp.provisioning_uri(user.totp_secret, user.username), error="m").save(svg, kind="svg", scale=6, border=2)
+    segno.make(totp.provisioning_uri(secret, user.username), error="m").save(svg, kind="svg", scale=6, border=2)
     return Response(svg.getvalue(), mimetype="image/svg+xml")
 
 
@@ -120,8 +128,8 @@ def change_password():
 
     # All other sessions expire
     keep_this_session(query(
-        "UPDATE users SET password = %s, session_version = session_version + 1 WHERE id = %s RETURNING session_version",
-        (password, g.user.id), one=True,
+        "UPDATE users SET password_hash = %s, session_version = session_version + 1 WHERE id = %s RETURNING session_version",
+        (passwords.hash_password(password), g.user.id), one=True,
     ))
     flash("Your password has been changed.")
     return redirect(url_for("account.index"))

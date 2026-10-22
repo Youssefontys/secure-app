@@ -4,7 +4,8 @@
 CREATE TABLE users (
     id         SERIAL PRIMARY KEY,
     username   TEXT UNIQUE NOT NULL,
-    password   TEXT NOT NULL,
+    -- Argon2id hash with its own salt and the settings in it (MIT-19); the password itself is stored nowhere.
+    password_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     -- Also in the session cookie. On logout, a new password or a change to the
     -- two-step verification it goes up; a cookie with an older version then no longer counts (MIT-09).
@@ -12,6 +13,7 @@ CREATE TABLE users (
 
     -- Two-step verification with TOTP (RFC 6238). The secret is set during the setup,
     -- but only counts once totp_enabled is true: that happens after a first valid code.
+    -- The secret is stored encrypted (MIT-17).
     totp_secret       TEXT,
     totp_enabled      BOOLEAN NOT NULL DEFAULT false,
     -- The time step of the last accepted code. A code from the same or an earlier step
@@ -35,6 +37,7 @@ CREATE TABLE auth_throttle (
 CREATE TABLE notes (
     id         SERIAL PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    -- Title and body encrypted with AES-256-GCM, bound to the owner (MIT-18).
     title      TEXT NOT NULL,
     body       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -14,14 +14,14 @@ The baseline only does what is needed to be functional: register, log in, log ou
 
 ## Structure
 
-- `app/` - the notes application: `app.py` creates the app, `db.py` talks to the database, `auth.py` handles registering and logging in (including the second step), `account.py` the profile, `notes.py` the notes, `totp.py` the TOTP calculation, `throttle.py` the attempt limits, `passwords.py` the rule for a new password. The website (HTML, CSS, JS) is in `app/web/`
+- `app/` - the notes application: `app.py` creates the app, `db.py` talks to the database, `auth.py` handles registering and logging in (including the second step), `account.py` the profile, `notes.py` the notes, `totp.py` the TOTP calculation, `throttle.py` the attempt limits, `passwords.py` the rule for a new password and the Argon2id hashing, `encryption.py` the encryption of the TOTP secret and the notes. The website (HTML, CSS, JS) is in `app/web/`
 - `db/` - the database schema, run by the database container on its first start
 - `compose.yaml` - app and database for local use
 - `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
 ## Run it
 
-Requires Docker with Compose v2. Copy `.env.example` to `.env` and fill in the two values, then:
+Requires Docker with Compose v2. Copy `.env.example` to `.env` and fill in the three values, then:
 
 ```bash
 docker compose up --build --wait
@@ -39,6 +39,7 @@ python -u tests/securitytest.py --wipe
 
 - Week 5, authentication: a new password of 12 to 64 characters; two-step verification with TOTP, required after the first password, where every code works once; attempt limits per name and per address on the password, the code and the recovery code; a recovery code, and forgot password with two of the three factors; old sessions end on logout and when the password or the second factor changes; changing the password, deleting the account and replacing the second factor ask for the current password and a code
 - Week 5, authorization: every route is closed by default, except a short list of public ones, so a new route is never open by accident; a note of someone else gives 404 on opening, editing and deleting
+- Week 6, encryption: passwords as an Argon2id hash with the OWASP setting, also calculated for an unknown name, and rehashed at the login when the setting changes; the TOTP secret and the notes encrypted with AES-256-GCM, each bound to its owner and place, with the key outside the database
 
 ## Branches
 

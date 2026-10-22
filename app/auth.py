@@ -11,6 +11,7 @@ from functools import wraps
 import psycopg
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
+import encryption
 import passwords
 import throttle
 import totp
@@ -89,7 +90,7 @@ def register():
     if error := passwords.password_problem(password):
         return render_template("auth.html", error=error), 400
     try:
-        query("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+        query("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, passwords.hash_password(password)))
     except psycopg.errors.UniqueViolation:
         return render_template("auth.html", error="That username is already taken."), 409
     flash("Your account has been created. You can log in now.")
@@ -108,13 +109,11 @@ def login():
     limits = throttle.password_limits(username, request.remote_addr)
     if minutes := throttle.attempt(*limits):
         return render_template("auth.html", error=throttle.message(minutes)), *throttle.refusal(minutes)
-    row = query(
-        "SELECT id, totp_enabled, session_version FROM users WHERE username = %s AND password = %s",
-        (username, password), one=True,
-    )
-    if row is None:
+    row = query("SELECT id, password_hash, totp_enabled, session_version FROM users WHERE username = %s", (username,), one=True)
+    if not passwords.matches(row and row.password_hash, password):
         return render_template("auth.html", error="Incorrect username or password."), 400
     throttle.succeeded(*limits)
+    passwords.rehash_if_needed(row.id, row.password_hash, password)
 
     session.clear()
     if row.totp_enabled:
@@ -238,9 +237,9 @@ def forgot_password():
     # All in one UPDATE: password, new recovery code, sessions; the old hash in the WHERE.
     new_code, new_hash = make_recovery_code()
     row = query(
-        "UPDATE users SET password = %s, recovery_hash = %s, session_version = session_version + 1"
+        "UPDATE users SET password_hash = %s, recovery_hash = %s, session_version = session_version + 1"
         " WHERE id = %s AND recovery_hash = %s RETURNING id",
-        (password, new_hash, user.id, given), one=True,
+        (passwords.hash_password(password), new_hash, user.id, given), one=True,
     )
     if row is None:
         return render_template("login_forgot.html", error=FORGOT_WRONG), 400
@@ -262,12 +261,14 @@ def logout():
 def check_code(user_id):
     code_limit = throttle.limit("totp_account", user_id)
     user = query("SELECT totp_secret FROM users WHERE id = %s", (user_id,), one=True)
-    if not (user and user.totp_secret):
+    # Cannot be decrypted (changed, moved, other key) counts as no secret: then every code is refused.
+    secret = user and user.totp_secret and encryption.decrypt(user.totp_secret, "totp_secret", user_id)
+    if not secret:
         return CodeError("Two-step verification is not set up.", 0)
     # Locked: then the right code is refused too (MIT-06).
     if minutes := throttle.attempt(code_limit):
         return CodeError(throttle.message(minutes), minutes)
-    step = totp.matching_step(user.totp_secret, request.form.get("code", ""))
+    step = totp.matching_step(secret, request.form.get("code", ""))
     # Single use (MIT-07) and lockout in one UPDATE: of two requests, one wins.
     if step is not None and query(
         "UPDATE users SET totp_last_step = %s"
