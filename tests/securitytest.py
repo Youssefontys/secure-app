@@ -9,22 +9,26 @@ accounts and notes are gone afterwards. That is why it only runs with --wipe:
 
 Asks nothing. Only the standard library and docker compose; works on Windows and Linux. Exit 1 if a check fails.
 """
-import base64, hashlib, hmac, http.cookiejar, importlib, os, re, struct, subprocess, sys, threading, time
+import base64, hashlib, hmac, http.cookiejar, importlib, json, os, re, struct, subprocess, sys, threading, time
 import urllib.error, urllib.parse, urllib.request
 
 # The tests import their helpers from this file. As a script it is called __main__; this way it is the same module
 # under both names, with the same results.
 sys.modules.setdefault("securitytest", sys.modules[__name__])
-TESTS = ("twofactor", "password", "bruteforce", "note", "encryption", "appsec")
+TESTS = ("twofactor", "password", "bruteforce", "note", "encryption", "appsec", "logging")
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 B = "http://127.0.0.1:5000"
+# Only the log of this run counts; an earlier run deliberately records an error (fail safely).
+STARTED = str(int(time.time()))
 # Test passwords for the local stack, long enough for the strength rule (MIT-13).
 PW, PW2 = "security-test-password", "security-test-password-2"
 # Five wrong attempts are allowed, the sixth is refused, and then 15 minutes of waiting (MIT-06, MIT-10).
 LOCKED = ([400] * 5 + [429], "900")
-# Every result, and every secret a test sees: those are never printed.
+# Every result, and every secret a test sees: those are never printed, and must not be in the log at the end.
 results, secrets_seen = [], []
+# True if all tests run; only then can the log contain every kind of event.
+full = False
 
 
 def compose(*args):
@@ -164,8 +168,9 @@ if __name__ == "__main__":
         sys.exit(__doc__)
     if unknown := sorted(set(chosen) - set(TESTS)):
         sys.exit(f"Unknown test: {', '.join(unknown)}. Choose from: {', '.join(TESTS)}.")
-    # Always in the order of TESTS.
+    # Always in the order of TESTS: logging searches the log of the tests before it, and stops the database last.
     chosen = [t for t in TESTS if t in chosen] or list(TESTS)
+    full = chosen == list(TESTS)
     sql("DELETE FROM auth_throttle; DELETE FROM users;")
     for name in chosen:
         print(f"\n#### {name}test.py")
