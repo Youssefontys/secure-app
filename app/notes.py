@@ -3,6 +3,7 @@
 from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
 import encryption
+import events
 from db import query
 
 bp = Blueprint("notes", __name__)
@@ -48,6 +49,9 @@ def sealed(title, body):
 def readable(note):
     title = encryption.decrypt(note.title, "note_title", g.user.id)
     body = encryption.decrypt(note.body, "note_body", g.user.id)
+    # Changed or moved in the database: a trace of someone with write access.
+    if title is None or body is None:
+        events.event("note_unreadable", note_id=note.id)
     return note._replace(title=title or UNREADABLE, body=body or UNREADABLE)
 
 

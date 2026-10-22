@@ -12,6 +12,7 @@ import psycopg
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
 import encryption
+import events
 import passwords
 import throttle
 import totp
@@ -27,6 +28,11 @@ PUBLIC_ENDPOINTS = {"auth.register", "auth.login", "auth.login_code", "auth.logi
 FORGOT_WRONG = "Username, recovery code or code is incorrect."
 
 
+# The target in the log, only if the account exists: a typed name can also be a password (MIT-31).
+def target(row, username):
+    return {"user_id": row.id, "username": username} if row else {"known": False}
+
+
 @bp.before_app_request
 def load_user():
     g.user = None
@@ -35,6 +41,7 @@ def load_user():
         return
     user = query("SELECT id, username, session_version, totp_enabled FROM users WHERE id = %s", (user_id,), one=True)
     if user is None or user.session_version != session.get("session_version"):
+        events.event("session_rejected", user_id=user_id)
         session.clear()
         flash("Your session is no longer valid. Please log in again.")
         return
@@ -90,9 +97,12 @@ def register():
     if error := passwords.password_problem(password):
         return render_template("auth.html", error=error), 400
     try:
-        query("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, passwords.hash_password(password)))
+        row = query("INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
+                    (username, passwords.hash_password(password)), one=True)
     except psycopg.errors.UniqueViolation:
+        events.event("register_taken", username=username)
         return render_template("auth.html", error="That username is already taken."), 409
+    events.event("account_created", user_id=row.id, username=username)
     flash("Your account has been created. You can log in now.")
     return redirect(url_for("auth.login"))
 
@@ -111,6 +121,7 @@ def login():
         return render_template("auth.html", error=throttle.message(minutes)), *throttle.refusal(minutes)
     row = query("SELECT id, password_hash, totp_enabled, session_version FROM users WHERE username = %s", (username,), one=True)
     if not passwords.matches(row and row.password_hash, password):
+        events.event("login_failed", **target(row, username))
         return render_template("auth.html", error="Incorrect username or password."), 400
     throttle.succeeded(*limits)
     passwords.rehash_if_needed(row.id, row.password_hash, password)
@@ -124,6 +135,7 @@ def login():
         return redirect(url_for("auth.login_code"))
     # No two-step verification yet: after the password, set it up first (MIT-12).
     start_session(row.id, row.session_version)
+    events.event("login_ok", user_id=row.id, with_2fa=False)
     return redirect(url_for("account.setup_2fa"))
 
 
@@ -158,6 +170,7 @@ def login_code():
         return render_template("login_code.html", error=error.message), *throttle.refusal(error.minutes)
     # Only now logged in; start_session throws the half login away completely.
     start_session(user_id, session["pending_version"])
+    events.event("login_ok", user_id=user_id, with_2fa=True)
     return redirect(url_for("notes.index"))
 
 
@@ -195,6 +208,7 @@ def login_recover():
     given = hash_recovery_code(request.form.get("code", ""))
     stored = query("SELECT recovery_hash FROM users WHERE id = %s", (user_id,), one=True)
     if not (stored and stored.recovery_hash and hmac.compare_digest(given, stored.recovery_hash)):
+        events.event("recovery_failed", user_id=user_id)
         return render_template("login_recover.html", error="Incorrect recovery code."), 400
     # Works once: 2FA off, sessions invalid; the hash in the WHERE lets one request win.
     row = query(
@@ -206,6 +220,7 @@ def login_recover():
         return render_template("login_recover.html", error="Incorrect recovery code."), 400
     throttle.succeeded(recovery_limit)
     start_session(user_id, row.session_version)
+    events.event("recovery_used", user_id=user_id)
     flash("Your recovery code has been used. Set up two-step verification again with your new phone.")
     return redirect(url_for("account.setup_2fa"))
 
@@ -228,6 +243,7 @@ def forgot_password():
     user = query("SELECT id, recovery_hash FROM users WHERE username = %s AND totp_enabled", (username,), one=True)
     given = hash_recovery_code(request.form.get("recovery_code", ""))
     if not (user and user.recovery_hash and hmac.compare_digest(given, user.recovery_hash)):
+        events.event("forgot_failed", **target(user, username))
         return render_template("login_forgot.html", error=FORGOT_WRONG), 400
     throttle.succeeded(*limits)
     # The recovery code is right; only now does a wrong code count per account, with the lockout of the code step (MIT-06).
@@ -244,6 +260,7 @@ def forgot_password():
     if row is None:
         return render_template("login_forgot.html", error=FORGOT_WRONG), 400
     session.clear()
+    events.event("password_reset", user_id=user.id)
     # Not logged in automatically; but the new recovery code at once, otherwise there is none left.
     return render_template("recovery_code.html", code=new_code, first=False, reset=True)
 
@@ -253,6 +270,7 @@ def logout():
     # Version up: a copied cookie expires too, on all devices.
     if g.user is not None:
         query("UPDATE users SET session_version = session_version + 1 WHERE id = %s", (g.user.id,))
+        events.event("logout")
     session.clear()
     return redirect(url_for("auth.login"))
 
@@ -279,4 +297,5 @@ def check_code(user_id):
         throttle.succeeded(code_limit)
         return None
     # Wrong, or already used: the attempt has already been counted.
+    events.event("totp_failed", user_id=user_id)
     return CodeError("Incorrect or already used code.", 0)
