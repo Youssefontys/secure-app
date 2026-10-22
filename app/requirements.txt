@@ -1,3 +1,4 @@
 flask               # Web framework
 psycopg[binary]     # PostgreSQL driver
 segno               # QR code for setting up two-step verification
+cryptography        # AES-256-GCM for the TOTP secret and the notes, and Argon2id for passwords, through OpenSSL
