@@ -1,7 +1,7 @@
 "use strict";
 
 // Decoration on the login and registration pages: the figure follows the mouse and reacts to a click.
-// A file of its own and no inline script, so a strict CSP later needs no exception for it.
+// A file of its own and no inline script, so the CSP (MIT-21) works without 'unsafe-inline'.
 if (document.querySelector(".scene")) {
   const root = document.documentElement;
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -32,7 +32,7 @@ if (document.querySelector(".scene")) {
     timer = window.setTimeout(() => document.body.classList.remove("alerted"), 1400);
     if (ticker) ticker.textContent = lines[index++ % lines.length];
     if (reduced) return;
-    // A short pulse where the click was; the position through the CSSOM, not a style attribute, for the same CSP.
+    // A short pulse where the click was; the position through the CSSOM, not a style attribute (CSP).
     const ripple = document.createElement("span");
     ripple.className = "ripple";
     ripple.style.setProperty("--x", `${event.clientX}px`);

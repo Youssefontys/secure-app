@@ -15,15 +15,6 @@ from db import query
 
 bp = Blueprint("account", __name__, url_prefix="/account")
 
-NO_STORE_ENDPOINTS = {"account.setup_2fa", "account.qr_2fa", "account.new_recovery", "auth.forgot_password"}
-
-
-@bp.after_app_request
-def no_store(response):
-    if request.endpoint in NO_STORE_ENDPOINTS:
-        response.headers["Cache-Control"] = "no-store"
-    return response
-
 
 @bp.route("")
 def index():

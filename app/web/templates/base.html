@@ -22,7 +22,7 @@
   {# Only the login and registration pages include the scene. #}
   {% block scene %}{% endblock %}
 
-  {# Separate files and no inline script, so a strict CSP later needs no exception for them.
+  {# Separate files and no inline script, so the CSP (MIT-21) works without 'unsafe-inline'.
      defer, so the page does not wait for them. #}
   <script src="{{ url_for('static', filename='cyber.js') }}" defer></script>
   <script src="{{ url_for('static', filename='account-menu.js') }}" defer></script>

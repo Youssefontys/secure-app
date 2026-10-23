@@ -20,6 +20,7 @@
     <h2>Two-step verification</h2>
     <p class="hint">On, and required. Logging in asks for your password and a code from your authenticator app. A new recovery code or a new phone asks for both as well.</p>
     <form method="post" action="{{ url_for('account.new_recovery') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Current password
         <input name="current_password" type="password" autocomplete="current-password" required>
       </label>
@@ -29,6 +30,7 @@
       <button type="submit" class="secondary">New recovery code</button>
     </form>
     <form method="post" action="{{ url_for('account.reset_2fa') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Current password
         <input name="current_password" type="password" autocomplete="current-password" required>
       </label>
@@ -40,6 +42,7 @@
   </section>
 
   <form method="post" action="{{ url_for('account.change_password') }}" class="card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h2>Change password</h2>
     <label>Current password
       <input name="current_password" type="password" autocomplete="current-password" required>
@@ -58,6 +61,7 @@
 
   <form method="post" action="{{ url_for('account.delete_account') }}" class="card"
         data-confirm="Your account and all your notes will be deleted for good. Continue?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h2>Delete account</h2>
     <p class="hint">Your account and all your notes will be deleted for good. This cannot be undone.</p>
     <label>Current password
