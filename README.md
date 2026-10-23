@@ -41,6 +41,7 @@ python -u tests/securitytest.py --wipe
 - Week 5, authorization: every route is closed by default, except a short list of public ones, so a new route is never open by accident; a note of someone else gives 404 on opening, editing and deleting
 - Week 6, encryption: passwords as an Argon2id hash with the OWASP setting, also calculated for an unknown name, and rehashed at the login when the setting changes; the TOTP secret and the notes encrypted with AES-256-GCM, each bound to its owner and place, with the key outside the database
 - Week 6, logging: every security event as one JSON line, with time, kind and address, and never a password, code or secret; a typed name only when the account exists, and one line per lockout instead of one per refused attempt; an own error page that shows no details, with the error and the path in the log, safe against a line break in the URL
+- Week 7, input validation: the app does not start with an unknown setting or a session key under 32 characters, and the session cookie goes only over HTTPS unless HTTPS_ONLY=0, as locally, with SameSite=Lax; usernames of 3 to 20 letters, digits and _, notes of at most 15 and 250 characters, and requests over 16 KiB refused with 413 before they are read; at most 10 new accounts per hour per address and 25 notes per account
 
 ## Branches
 

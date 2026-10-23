@@ -10,7 +10,7 @@
     <p class="hint">Set a new password with your recovery code and the code from your authenticator app. You then get a new recovery code.</p>
     <form method="post">
       <label>Username
-        <input name="username" autocomplete="username" value="{{ request.form.get('username', '') }}" required autofocus>
+        <input name="username" autocomplete="username" value="{{ request.form.get('username', '') }}" required autofocus maxlength="20" pattern="[A-Za-z0-9_]{3,20}" title="3 to 20 characters: letters, digits and _">
       </label>
       <label>Recovery code
         <input name="recovery_code" autocomplete="off" spellcheck="false" maxlength="64" required>

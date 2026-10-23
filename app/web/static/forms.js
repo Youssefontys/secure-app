@@ -9,7 +9,8 @@ document.addEventListener("submit", (event) => {
   if (message && !window.confirm(message)) event.preventDefault();
 });
 
-// data-validate: the submit button stays off while a field does not meet required.
+// data-validate: the submit button stays off while a field does not meet
+// required or maxlength.
 for (const form of document.querySelectorAll("form[data-validate]")) {
   const button = form.querySelector('button[type="submit"]');
   const update = () => { button.disabled = !form.checkValidity(); };

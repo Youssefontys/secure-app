@@ -27,6 +27,8 @@ PW, PW2 = "security-test-password", "security-test-password-2"
 LOCKED = ([400] * 5 + [429], "900")
 # Every result, and every secret a test sees: those are never printed, and must not be in the log at the end.
 results, secrets_seen = [], []
+# The tests register many more than 10 accounts; except in the limit test a registration therefore does not count (MIT-30).
+count_registrations, register_key = False, None
 # True if all tests run; only then can the log contain every kind of event.
 full = False
 
@@ -61,8 +63,20 @@ def client():
     return opener
 
 
+def registration_counter():
+    """The key of the registration counter for the address the tests reach the app from: the gateway of Docker."""
+    global register_key
+    if register_key is None:
+        gw = subprocess.run(["docker", "network", "inspect", f"{os.path.basename(REPO).lower()}_default", "--format",
+                             "{{(index .IPAM.Config 0).Gateway}}"], capture_output=True, text=True).stdout.strip()
+        register_key = in_app(f"import throttle; print(throttle.limit('register_ip', throttle.client_ip({gw!r})).key)").stdout.strip()
+    return register_key
+
+
 def req(c, path, data=None):
     """(status, body, headers) of a GET, or of a POST if there is data."""
+    if path == "/register" and data is not None and not count_registrations:
+        sql(f"DELETE FROM auth_throttle WHERE key = '{registration_counter()}'")
     try:
         r = c.open(B + path, urllib.parse.urlencode(data).encode() if data is not None else None)
         return r.status, r.read().decode(), r.headers

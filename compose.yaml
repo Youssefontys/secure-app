@@ -25,6 +25,8 @@ services:
       FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:?set FLASK_SECRET_KEY in .env}
       # Encrypts the TOTP secret and the notes (MIT-17, MIT-18); lost or replaced means the notes are lost.
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
+      # Locally the app runs on HTTP; without this line the safe default applies (HTTPS only).
+      HTTPS_ONLY: "0"
       DATABASE_URL: postgresql://notes_owner:${POSTGRES_PASSWORD}@db:5432/notes
     ports:
       - "127.0.0.1:5000:5000"

@@ -9,6 +9,7 @@ def run():
     req(c, "/register", {"username": "testacc1", "password": PW})
     r = req(c, "/login", {"username": "testacc1", "password": PW})
     check("login without 2FA", loc(r), "302 /account/2fa")
+    check("  session cookie with SameSite=Lax and HttpOnly", ("SameSite=Lax" in r[2]["Set-Cookie"], "HttpOnly" in r[2]["Set-Cookie"]), (True, True))
     check("/ before the setup", loc(req(c, "/")), "302 /account/2fa")
     check("/account before the setup", loc(req(c, "/account")), "302 /account/2fa")
     check("create a note before the setup", loc(req(c, "/", {"title": "x", "body": "y"})), "302 /account/2fa")
