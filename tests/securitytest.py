@@ -9,7 +9,7 @@ accounts and notes are gone afterwards. That is why it only runs with --wipe:
 
 Asks nothing. Only the standard library and docker compose; works on Windows and Linux. Exit 1 if a check fails.
 """
-import base64, hashlib, hmac, http.cookiejar, importlib, json, os, re, struct, subprocess, sys, threading, time
+import base64, hashlib, hmac, http.cookiejar, importlib, json, os, re, struct, subprocess, sys, threading, time, zlib
 import urllib.error, urllib.parse, urllib.request
 
 # The tests import their helpers from this file. As a script it is called __main__; this way it is the same module
@@ -63,6 +63,16 @@ def client():
     return opener
 
 
+def csrf_of(c):
+    """The CSRF token in the session cookie of this browser: signed, not encrypted, so readable."""
+    value = next((k.value for k in c.jar if k.name == "session"), "")
+    if not value:
+        return None
+    payload = value.split(".")[1] if value.startswith(".") else value.split(".")[0]
+    raw = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+    return json.loads(zlib.decompress(raw) if value.startswith(".") else raw).get("csrf")
+
+
 def registration_counter():
     """The key of the registration counter for the address the tests reach the app from: the gateway of Docker."""
     global register_key
@@ -73,10 +83,17 @@ def registration_counter():
     return register_key
 
 
-def req(c, path, data=None):
-    """(status, body, headers) of a GET, or of a POST if there is data."""
+def req(c, path, data=None, csrf=True):
+    """(status, body, headers) of a GET, or of a POST if there is data; a POST gets the CSRF token, as in a form."""
     if path == "/register" and data is not None and not count_registrations:
         sql(f"DELETE FROM auth_throttle WHERE key = '{registration_counter()}'")
+    if data is not None and csrf and "csrf_token" not in data:
+        if not csrf_of(c):
+            try:
+                c.open(B + "/login")
+            except urllib.error.HTTPError:
+                pass
+        data = {**data, "csrf_token": csrf_of(c) or ""}
     try:
         r = c.open(B + path, urllib.parse.urlencode(data).encode() if data is not None else None)
         return r.status, r.read().decode(), r.headers

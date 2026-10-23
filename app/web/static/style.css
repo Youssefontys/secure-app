@@ -1,6 +1,6 @@
 /* One stylesheet, no framework and no CDN. That keeps the number of
-   dependencies low and makes a strict Content-Security-Policy possible
-   later: no external sources, no inline styles. */
+   dependencies low and makes the strict Content-Security-Policy possible
+   (MIT-21): no external sources, no inline styles. */
 
 :root {
   --bg: #080c12;
@@ -558,7 +558,7 @@ body.alerted .ticker { color: var(--danger); }
 }
 
 /* Error page (MIT-25): a robot that has broken down. All styling here, nothing
-   inline, so a strict CSP is possible later. */
+   inline, so the CSP stays strict. */
 .robot-page { text-align: center; }
 .robot-page .card { text-align: left; }
 .robot {

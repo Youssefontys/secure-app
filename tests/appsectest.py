@@ -1,8 +1,29 @@
-"""Application security: configuration as input, input validation, only POST and closed by default (MIT-22 to MIT-24).
-Runs through securitytest.py."""
+"""Application security: configuration as input, input validation, closed by default, headers, CSRF, only POST, cache and
+session lifetime (MIT-20 to MIT-29). Runs through securitytest.py."""
 from securitytest import *
 
+CSP = "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+PERMISSIONS = "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+HEADERS = ("Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy",
+           "Cross-Origin-Opener-Policy", "Cross-Origin-Resource-Policy", "Cross-Origin-Embedder-Policy")
 NAME_RULE = "Choose a username of 3 to 20 characters: letters, digits and _."
+AGE_PROBE = """import json, time, urllib.error, urllib.request
+from unittest import mock
+import app, db
+with app.app.app_context():
+    u = db.query("SELECT id, session_version FROM users WHERE username = 'testacc13'", one=True)
+signer = app.app.session_interface.get_signing_serializer(app.app)
+class Stop(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args): return None
+out = []
+for hours in (7, 9, 24 * 30):
+    with mock.patch("time.time", return_value=time.time() - hours * 3600):
+        cookie = signer.dumps({"user_id": u.id, "session_version": u.session_version})
+    try:
+        out.append(urllib.request.build_opener(Stop).open(urllib.request.Request("http://127.0.0.1:5000/", headers={"Cookie": "session=" + cookie})).status)
+    except urllib.error.HTTPError as e:
+        out.append(f"{e.code} {e.headers.get('Location')}")
+print(json.dumps(out))"""
 
 
 def starts(*env):
@@ -43,7 +64,34 @@ def run():
           in_app("import auth; print(sorted(auth.PUBLIC_ENDPOINTS))").stdout.strip(),
           "['auth.forgot_password', 'auth.login', 'auth.login_code', 'auth.login_recover', 'auth.logout', 'auth.register', 'static']")
 
+    print("== security headers (MIT-21)")
+    for path in ("/login", "/", "/does-not-exist"):
+        h = req(client(), path)[2]
+        check(f"headers on {path}", tuple(h.get(name) for name in HEADERS),
+              (CSP, "DENY", "nosniff", "same-origin", PERMISSIONS, "same-origin", "same-origin", "require-corp"))
+    check("  locally on HTTP no HSTS", req(client(), "/login")[2].get("Strict-Transport-Security"), None)
+
+    print("== CSRF token (MIT-20)")
+    ca = account("testacc12")[0]
+    before = sql("SELECT count(*) FROM notes")
+    r = req(ca, "/", {"title": "No token", "body": "x"}, csrf=False)
+    check("create a note without a token: 400, nothing created", (r[0], sql("SELECT count(*) FROM notes")), (400, before))
+    check("  with a wrong token: 400", req(ca, "/", {"title": "Wrong token", "body": "x", "csrf_token": "x" * 43})[0], 400)
+    other = client()
+    req(other, "/login")
+    check("  with the token of another session: 400", req(ca, "/", {"title": "Other token", "body": "x", "csrf_token": csrf_of(other)})[0], 400)
+    check("  logging out without a token: 400, still logged in", (req(ca, "/logout", {}, csrf=False)[0], req(ca, "/")[0]), (400, 200))
+    check("  with the own token: created", loc(req(ca, "/", {"title": "With token", "body": "x"})), "302 /")
+    check("  logging in without a token: 400", req(client(), "/login", {"username": "testacc12", "password": PW}, csrf=False)[0], 400)
+
     print("== only POST acts")
     unlock()
     heads = [urllib.request.urlopen(urllib.request.Request(B + "/login", method="HEAD")).status for _ in range(3)]
     check("3 times HEAD /login: plain 200, does not count as an attempt", (heads, sql("SELECT count(*) FROM auth_throttle")), ([200] * 3, "0"))
+
+    print("== cache and session lifetime (MIT-28, MIT-29)")
+    ch = account("testacc13")[0]
+    cache = [req(ch, p)[2].get("Cache-Control") for p in ("/", "/account")] + [req(client(), p)[2].get("Cache-Control") for p in ("/login", "/does-not-exist")]
+    check("no-store on pages, also logged in and on a 404", cache, ["no-store"] * 4)
+    check("  static files may be cached", req(client(), "/static/style.css")[2].get("Cache-Control") != "no-store", True)
+    check("session of 7 hours works, of 9 hours and 30 days not", json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", "302 /login"])

@@ -1,7 +1,7 @@
 # Creates the Flask app and attaches auth, account and notes to it.
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from flask import Flask, render_template, request
@@ -9,6 +9,7 @@ from werkzeug.exceptions import HTTPException
 
 import account
 import auth
+import csrf
 import notes
 import passwords
 from db import TIMEZONE, close_connection
@@ -30,18 +31,51 @@ if len(app.secret_key) < 32:
     raise RuntimeError("FLASK_SECRET_KEY must be at least 32 characters.")
 # Safe by default: the session cookie only over HTTPS (MC-04). Locally, on HTTP, compose.yaml turns this off.
 app.config["SESSION_COOKIE_SECURE"] = setting("HTTPS_ONLY", "1", ("0", "1")) == "1"
-# Not sent with a form from another site (MC-05).
+# Not sent with a form from another site (MC-05); the CSRF token is the second layer.
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# Flask refuses a cookie whose signature is older; without this line 31 days (MIT-29, MC-04).
+# The app writes the cookie mainly at login, so this is about 8 hours after the login.
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 # The largest form is a note of 250 characters; more is refused before it is read (MC-10).
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
+# Before the user is loaded, so an expired session simply goes to the login page (MIT-20).
+app.before_request(csrf.check)
 for blueprint in (auth.bp, account.bp, notes.bp):
     app.register_blueprint(blueprint)
 app.teardown_appcontext(close_connection)
 app.jinja_env.globals.update(
     TITLE_MAX=notes.TITLE_MAX, BODY_MAX=notes.BODY_MAX, NOTES_MAX=notes.NOTES_MAX,
-    PASSWORD_MIN=passwords.PASSWORD_MIN, PASSWORD_MAX=passwords.PASSWORD_MAX,
+    PASSWORD_MIN=passwords.PASSWORD_MIN, PASSWORD_MAX=passwords.PASSWORD_MAX, csrf_token=csrf.token,
 )
+
+
+# Only own files and no inline script: a second layer against XSS (MC-07); no frame on another site (MC-24).
+CSP = "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+# No camera, microphone, location, payment or USB: the app uses none of them, so a script that got in cannot either.
+PERMISSIONS = "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+
+
+# On every response, error pages too (MIT-21). HSTS only over HTTPS, otherwise the browser remembers it wrongly.
+@app.after_request
+def security_headers(response):
+    response.headers["Content-Security-Policy"] = CSP
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = PERMISSIONS
+    # Site isolation against Spectre: no window or resource shared with another site. The app only loads
+    # its own files (the CSP), so require-corp blocks nothing it needs.
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    # No page in a browser or proxy cache: after logging out, Back shows nothing (MIT-28), and the secret and
+    # recovery code are kept nowhere (MIT-08, MIT-11). Static files may be cached.
+    if request.endpoint != "static":
+        response.headers["Cache-Control"] = "no-store"
+    if app.config["SESSION_COOKIE_SECURE"]:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
+    return response
 
 
 # Short messages for the errors a visitor can cause; 413 comes before the request is read (MIT-22).

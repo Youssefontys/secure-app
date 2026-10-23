@@ -10,6 +10,7 @@
 
   <div class="card">
     <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Username
         <input name="username" autocomplete="username" required maxlength="20" pattern="[A-Za-z0-9_]{3,20}" title="3 to 20 characters: letters, digits and _">
       </label>
