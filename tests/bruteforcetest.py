@@ -1,5 +1,6 @@
-"""Brute force: the attempt limits per name and per address, and simultaneous requests (MIT-06, MIT-10).
-Runs through securitytest.py."""
+"""Brute force: the attempt limits per name and per address, simultaneous requests and the limit on registering
+(MIT-06, MIT-10, MIT-30). Runs through securitytest.py."""
+import securitytest
 from securitytest import *
 
 
@@ -28,4 +29,15 @@ def run():
     check("IPv4 behind IPv6, IPv6 per /64, plain IPv4", in_app(
         "import throttle; print(*(throttle.client_ip(a) for a in ('::ffff:203.0.113.7', '2001:db8::1', '192.0.2.1')))").stdout.strip(),
         "203.0.113.7 2001:db8::/64 192.0.2.1")
+    unlock()
+
+    print("== registering (MIT-30)")
+    securitytest.count_registrations = True
+    sql(f"DELETE FROM auth_throttle WHERE key = '{registration_counter()}'")
+    regs = [req(client(), "/register", {"username": f"limit_{i}", "password": PW}) for i in range(11)]
+    check("registering: 10 per hour per address, the 11th 429", ([r[0] for r in regs], regs[-1][2].get("Retry-After")), ([302] * 10 + [429], "3600"))
+    check("  with a message", msg(regs[-1][1]), "Too many new accounts from this address. Try again in 60 minutes.")
+    check("  no 11th account", sql("SELECT count(*) FROM users WHERE username LIKE 'limit\\_%'"), "10")
+    securitytest.count_registrations = False
+    sql("DELETE FROM users WHERE username LIKE 'limit\\_%'")
     unlock()
