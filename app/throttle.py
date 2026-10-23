@@ -24,6 +24,8 @@ POLICIES = {
     "recovery_account": Policy(5, 15, 15, 24 * 60),
     # Re-authentication, per account: only reachable with a session, so the account may be locked (MIT-16).
     "reauth_account": Policy(5, 15, 15, 24 * 60),
+    # New accounts per address, successful ones too: every registration costs an Argon2id calculation of 19 MiB (MIT-30).
+    "register_ip": Policy(10, 60, 60, 4 * 60),
 }
 # A successful attempt does not clear this counter: otherwise an own account keeps resetting it.
 KEEP_ON_SUCCESS = {"password_ip"}

@@ -25,6 +25,8 @@ CodeError = namedtuple("CodeError", "message minutes")
 SETUP_ENDPOINTS = {"account.setup_2fa", "account.qr_2fa"}
 # The only routes without a login; every other route is closed by default (MIT-24).
 PUBLIC_ENDPOINTS = {"auth.register", "auth.login", "auth.login_code", "auth.login_recover", "auth.forgot_password", "auth.logout", "static"}
+# 3 to 20 characters: letters, digits and _ (MIT-22). At login another name counts as unknown.
+USERNAME = re.compile(r"[A-Za-z0-9_]{3,20}")
 FORGOT_WRONG = "Username, recovery code or code is incorrect."
 
 
@@ -94,8 +96,14 @@ def register():
     password = request.form.get("password", "")
     if not username or not password:
         return render_template("auth.html", error="Enter a username and a password."), 400
+    if not USERNAME.fullmatch(username):
+        return render_template("auth.html", error="Choose a username of 3 to 20 characters: letters, digits and _."), 400
     if error := passwords.password_problem(password):
         return render_template("auth.html", error=error), 400
+    # Count only just before hashing: only a registration that really calculates counts (MIT-30, MC-10).
+    if minutes := throttle.attempt(throttle.limit("register_ip", throttle.client_ip(request.remote_addr))):
+        error = f"Too many new accounts from this address. {throttle.try_again(minutes)}"
+        return render_template("auth.html", error=error), *throttle.refusal(minutes)
     try:
         row = query("INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
                     (username, passwords.hash_password(password)), one=True)
@@ -119,7 +127,9 @@ def login():
     limits = throttle.password_limits(username, request.remote_addr)
     if minutes := throttle.attempt(*limits):
         return render_template("auth.html", error=throttle.message(minutes)), *throttle.refusal(minutes)
-    row = query("SELECT id, password_hash, totp_enabled, session_version FROM users WHERE username = %s", (username,), one=True)
+    row = USERNAME.fullmatch(username) and query(
+        "SELECT id, password_hash, totp_enabled, session_version FROM users WHERE username = %s", (username,), one=True,
+    )
     if not passwords.matches(row and row.password_hash, password):
         events.event("login_failed", **target(row, username))
         return render_template("auth.html", error="Incorrect username or password."), 400
@@ -240,7 +250,9 @@ def forgot_password():
     limits = throttle.password_limits(username, request.remote_addr)
     if minutes := throttle.attempt(*limits):
         return render_template("login_forgot.html", error=throttle.message(minutes)), *throttle.refusal(minutes)
-    user = query("SELECT id, recovery_hash FROM users WHERE username = %s AND totp_enabled", (username,), one=True)
+    user = USERNAME.fullmatch(username) and query(
+        "SELECT id, recovery_hash FROM users WHERE username = %s AND totp_enabled", (username,), one=True,
+    )
     given = hash_recovery_code(request.form.get("recovery_code", ""))
     if not (user and user.recovery_hash and hmac.compare_digest(given, user.recovery_hash)):
         events.event("forgot_failed", **target(user, username))

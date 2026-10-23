@@ -8,6 +8,11 @@ from db import query
 
 bp = Blueprint("notes", __name__)
 
+# Maximum length in characters (MIT-04); the templates also use them for maxlength.
+TITLE_MAX = 15
+BODY_MAX = 250
+# At most this many notes per account, against a database that fills up (MIT-30, MC-10).
+NOTES_MAX = 25
 # What is shown if a title or body does not decrypt (changed, moved or another key).
 UNREADABLE = "(unreadable)"
 
@@ -18,17 +23,32 @@ def index():
         title, body, error = read_note_form()
         if error:
             return render_template("notes.html", notes=fetch_notes(), error=error, title=title, body=body), 400
-        query("INSERT INTO notes (user_id, title, body) VALUES (%s, %s, %s)", (g.user.id, *sealed(title, body)))
+        # Count and insert in one statement. shortcut: simultaneous requests can together go a few over it;
+        # a lock would slow down every note for a limit that only stops growth.
+        if query(
+            "INSERT INTO notes (user_id, title, body) SELECT %s, %s, %s"
+            " WHERE (SELECT count(*) FROM notes WHERE user_id = %s) < %s RETURNING id",
+            (g.user.id, *sealed(title, body), g.user.id, NOTES_MAX), one=True,
+        ) is None:
+            events.event("note_limit")
+            error = f"You have reached the maximum of {NOTES_MAX} notes. Delete one first."
+            return render_template("notes.html", notes=fetch_notes(), error=error, title=title, body=body), 400
         return redirect(url_for("notes.index"))
 
     return render_template("notes.html", notes=fetch_notes())
 
 
-# Title and body from the form, plus an error message if one is empty. 
+# Title and body from the form, plus an error message if one is empty or too long.
 def read_note_form():
     title = request.form.get("title", "").strip()
     body = request.form.get("body", "").strip()
-    error = None if title and body else "Enter a title and a note."
+    error = None
+    if not title or not body:
+        error = "Enter a title and a note."
+    elif len(title) > TITLE_MAX:
+        error = f"The title can be at most {TITLE_MAX} characters."
+    elif len(body) > BODY_MAX:
+        error = f"The note can be at most {BODY_MAX} characters."
     return title, body, error
 
 

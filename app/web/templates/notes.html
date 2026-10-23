@@ -18,7 +18,7 @@
     </form>
   </details>
 
-  <p class="count">{{ notes|length }} notes</p>
+  <p class="count">{{ notes|length }} of {{ NOTES_MAX }} notes</p>
 
   {# Jinja escapes the values below by default, so a note with a
      script tag in it shows up as text (MIT-01). Never use |safe here. #}
