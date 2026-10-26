@@ -1,5 +1,5 @@
 """Application security: configuration as input, input validation, closed by default, headers, CSRF, only POST, cache and
-session lifetime (MIT-20 to MIT-29). Runs through securitytest.py."""
+session lifetime, and the rights of the database role (MIT-20 to MIT-29). Runs through securitytest.py."""
 from securitytest import *
 
 CSP = "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
@@ -23,6 +23,20 @@ for hours in (7, 9, 24 * 30):
         out.append(urllib.request.build_opener(Stop).open(urllib.request.Request("http://127.0.0.1:5000/", headers={"Cookie": "session=" + cookie})).status)
     except urllib.error.HTTPError as e:
         out.append(f"{e.code} {e.headers.get('Location')}")
+print(json.dumps(out))"""
+# Runs in the app container with the DATABASE_URL of the app; every statement is rolled back.
+ROLE_PROBE = """import json, os, psycopg
+c = psycopg.connect(os.environ["DATABASE_URL"])
+out = {"role": c.execute("SELECT current_user, rolsuper FROM pg_roles WHERE rolname = current_user").fetchone()}
+for stmt in ("SELECT count(*) FROM users", "CREATE TABLE trial (x int)", "DROP TABLE notes", "TRUNCATE notes",
+             "ALTER TABLE users ADD COLUMN x int", "CREATE ROLE intruder", "COPY (SELECT 1) TO PROGRAM 'true'"):
+    try:
+        with c.transaction():
+            c.execute(stmt)
+            raise psycopg.Rollback()
+        out[stmt] = "allowed"
+    except psycopg.errors.InsufficientPrivilege:
+        out[stmt] = "refused"
 print(json.dumps(out))"""
 
 
@@ -95,3 +109,14 @@ def run():
     check("no-store on pages, also logged in and on a 404", cache, ["no-store"] * 4)
     check("  static files may be cached", req(client(), "/static/style.css")[2].get("Cache-Control") != "no-store", True)
     check("session of 7 hours works, of 9 hours and 30 days not", json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", "302 /login"])
+
+    print("== database role (MIT-27)")
+    probe = json.loads(in_app(ROLE_PROBE).stdout)
+    check("the app logs in as notes_app, no superuser", probe.pop("role"), ["notes_app", False])
+    # The value from .env, not the name: the password used to be in DATABASE_URL. Never printed.
+    owner_pw = next(l.partition("=")[2].strip() for l in open(os.path.join(REPO, ".env"), encoding="utf-8") if l.startswith("POSTGRES_PASSWORD="))
+    check("  the password of the owner is not in the environment of the app", (len(owner_pw) >= 16, owner_pw in compose("exec", "-T", "app", "env").stdout),
+          (True, False))
+    check("  only reading and writing is allowed", probe, {"SELECT count(*) FROM users": "allowed", "CREATE TABLE trial (x int)": "refused",
+          "DROP TABLE notes": "refused", "TRUNCATE notes": "refused", "ALTER TABLE users ADD COLUMN x int": "refused",
+          "CREATE ROLE intruder": "refused", "COPY (SELECT 1) TO PROGRAM 'true'": "refused"})
