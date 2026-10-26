@@ -1,0 +1,16 @@
+# Dependabot opens a pull request itself for a new version of a package or image (MIT-33, MC-11).
+# Everything is pinned (MIT-03), so without this even security patches never come in by themselves. No pipeline needed.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /app
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /app
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly

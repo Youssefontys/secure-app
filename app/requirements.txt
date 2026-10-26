@@ -1,4 +1,17 @@
-flask               # Web framework
-psycopg[binary]     # PostgreSQL driver
-segno               # QR code for setting up two-step verification
-cryptography        # AES-256-GCM for the TOTP secret and the notes, and Argon2id for passwords, through OpenSSL
+# Everything pinned, including what Flask, psycopg and cryptography pull in (the second block) (MIT-03).
+# That way every build installs the same versions, and an SBoM matches what runs.
+flask==3.1.3            # web framework: routes, sessions, templates
+psycopg[binary]==3.3.6  # PostgreSQL driver, with its own copy of libpq and the libraries it needs (psycopg-binary)
+segno==1.6.6            # QR code for setting up two-step verification; pure Python, no dependencies of its own
+cryptography==50.0.2    # AES-256-GCM for the TOTP secret and the notes, and Argon2id for passwords, through OpenSSL
+gunicorn==26.2.0        # WSGI server for production, instead of the development server of Flask (MC-14); no dependencies of its own
+
+blinker==1.9.0          # via flask: internal signals (events inside Flask)
+cffi==2.1.1             # via cryptography: the link between Python and C code
+click==8.5.0            # via flask: the command line of Flask; the Dockerfile no longer uses it
+itsdangerous==2.2.0     # via flask: signs the session cookie with FLASK_SECRET_KEY
+jinja2==3.1.6           # via flask: renders the HTML templates, escapes by default (MIT-01)
+markupsafe==3.0.4       # via jinja2: the actual escaping of text into safe HTML (MIT-01)
+psycopg-binary==3.3.6   # via psycopg[binary]: the compiled part, with its bundled libpq, OpenSSL and more
+pycparser==3.12         # via cffi: reads C declarations for cffi
+werkzeug==3.1.9         # via flask: HTTP handling and the error pages

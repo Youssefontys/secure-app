@@ -23,8 +23,8 @@ def index():
         title, body, error = read_note_form()
         if error:
             return render_template("notes.html", notes=fetch_notes(), error=error, title=title, body=body), 400
-        # Count and insert in one statement. shortcut: simultaneous requests can together go a few over it;
-        # a lock would slow down every note for a limit that only stops growth.
+        # Count and insert in one statement. shortcut: simultaneous requests can together go a few over it,
+        # at most one per worker; a lock would slow down every note for a limit that only stops growth.
         if query(
             "INSERT INTO notes (user_id, title, body) SELECT %s, %s, %s"
             " WHERE (SELECT count(*) FROM notes WHERE user_id = %s) < %s RETURNING id",
