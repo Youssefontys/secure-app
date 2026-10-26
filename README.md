@@ -17,6 +17,7 @@ The baseline only does what is needed to be functional: register, log in, log ou
 - `app/` - the notes application: `app.py` creates the app, `db.py` talks to the database, `auth.py` handles registering and logging in (including the second step), `account.py` the profile, `notes.py` the notes, `totp.py` the TOTP calculation, `throttle.py` the attempt limits, `passwords.py` the rule for a new password and the Argon2id hashing, `encryption.py` the encryption of the TOTP secret and the notes, `events.py` the security events in the log, `csrf.py` the CSRF token of every form. The website (HTML, CSS, JS) is in `app/web/`
 - `db/` - the database schema and the password of the app role, run by the database container on its first start
 - `compose.yaml` - app and database for local use
+- `.github/dependabot.yml` - weekly update proposals for the pinned packages and images
 - `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
 ## Run it
@@ -44,6 +45,7 @@ python -u tests/securitytest.py --wipe
 - Week 7, input validation: the app does not start with an unknown setting or a session key under 32 characters, and the session cookie goes only over HTTPS unless HTTPS_ONLY=0, as locally, with SameSite=Lax; usernames of 3 to 20 letters, digits and _, notes of at most 15 and 250 characters, and requests over 16 KiB refused with 413 before they are read; at most 10 new accounts per hour per address and 25 notes per account
 - Week 7, CSRF and headers: a CSRF token per session on every POST; a strict Content-Security-Policy without inline script, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and the cross-origin headers on every response, and HSTS over HTTPS; no page in a browser or proxy cache, except the static files; and a session of at most 8 hours
 - Week 7, database security: the app logs in as its own role notes_app, which can only read and write its own tables, not as the owner; the password of the owner is not in the environment of the app
+- Week 7, system security: every Python package, including what the others pull in, and both base images pinned on version and digest, with Dependabot proposing updates every week; the app runs with Gunicorn as an ordinary user without a shell, instead of the development server of Flask as root
 
 ## Branches
 
