@@ -1,0 +1,84 @@
+# Builds the image and makes its SBoM: on every pull request to main in the job check, which publishes nothing, and on
+# every push to main again in the job image, which then puts the image on ghcr.io with the token of the run.
+# Only the SBoM for now (research, subquestion 1): no scan and no brake yet.
+# A package created this way gets the visibility of the repo.
+# Two tags, never latest (MIT-03): the commit, and the content of app/ (the tree hash of git), so a commit that only
+# changes something outside app/ points to the same image.
+name: Image
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# No rights by default; every job only gets what it needs.
+permissions: {}
+
+env:
+  # Pinned on version and digest (MIT-03); Dependabot does not see an image in a run line, so you update it yourself.
+  TRIVY: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+
+jobs:
+  # On a pull request, only with read rights: on a pull request from a fork GitHub gives no more anyway.
+  # The steps with an & are in the job image once more, with a *: this way the check makes exactly what is published.
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # Pinned on a commit, not on a tag that can move (MIT-03); Dependabot keeps it up to date (MIT-33).
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # ghcr.io wants lower case; the label links the package to this repo.
+      - &build
+        name: Build
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            -t "$image:$GITHUB_SHA" -t "$image:app-$(git rev-parse HEAD:app)" app
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+
+      # The SBoM (MIT-36): all components of the image as CycloneDX, only the list, without vulnerabilities. Trivy reads
+      # the image as a tar file, without the Docker socket, so it cannot change the image that is pushed later.
+      # Trivy names the main component after the tar file; jq puts the name and tag of the image there instead.
+      - &sbom
+        name: Make SBoM
+        run: |
+          docker save "$IMAGE:$GITHUB_SHA" -o "$RUNNER_TEMP/image.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan" "$TRIVY" image --input /scan/image.tar --format cyclonedx --output /scan/sbom.json --quiet
+          jq --arg name "$IMAGE:$GITHUB_SHA" '.metadata.component.name = $name' "$RUNNER_TEMP/sbom.json" > sbom.cdx.json
+
+      # Kept with the run; GitHub keeps it 90 days, the maximum for a public repo.
+      - &keep
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.cdx.json
+          retention-days: 90
+
+  # On a push to main, or by hand: the same steps, and then to ghcr.io.
+  image:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - *checkout
+      - *build
+      - *sbom
+      - *keep
+
+      # The token through stdin and an environment variable, not in the command itself.
+      - name: Push to ghcr.io
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push --all-tags "$IMAGE"
