@@ -18,15 +18,24 @@ The baseline only does what is needed to be functional: register, log in, log ou
 - `db/` - the database schema and the password of the app role, run by the database container on its first start
 - `compose.yaml` - app and database for local use
 - `.github/dependabot.yml` - weekly update proposals for the pinned packages and images
+- `scripts/` - `deployment.py` to deploy locally and to remove it all again. It asks what to do and starts `deploy_local.py` or `undo.py`, which take what they share from it: paths, questions, stopping and hackmode
 - `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
 ## Run it
 
-Requires Docker with Compose v2. Copy `.env.example` to `.env` and fill in the four values, then:
+Requires Docker with Compose v2 and Python 3. The script creates the four secrets in `.env` if they are missing, readable only for you, asks whether to turn on hackmode for the hacking week, and starts the stack:
 
 ```bash
-docker compose up --build --wait
+python scripts/deployment.py local
 ```
+
+Without a terminal, as in CI, it asks nothing and keeps what is in `.env`. To remove it all again, the containers, the database with all notes, the built image and `.env`, with no as the default per step:
+
+```bash
+python scripts/deployment.py undo
+```
+
+On Linux or macOS the command is often `python3`; the script works the same on Windows and Linux.
 
 The app is on http://127.0.0.1:5000, and its security events are in `docker compose logs app`, one JSON line each. After a change to `db/schema.sql`, remove the database volume first with `docker compose down -v`.
 
@@ -46,6 +55,7 @@ python -u tests/securitytest.py --wipe
 - Week 7, CSRF and headers: a CSRF token per session on every POST; a strict Content-Security-Policy without inline script, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy and the cross-origin headers on every response, and HSTS over HTTPS; no page in a browser or proxy cache, except the static files; and a session of at most 8 hours
 - Week 7, database security: the app logs in as its own role notes_app, which can only read and write its own tables, not as the owner; the password of the owner is not in the environment of the app
 - Week 7, system security: every Python package, including what the others pull in, and both base images pinned on version and digest, with Dependabot proposing updates every week; the app runs with Gunicorn as an ordinary user without a shell, instead of the development server of Flask as root
+- Week 7, secrets: `deployment.py local` creates every missing secret in `.env` with 256 random bits, never shows it, and makes `.env` readable only for its owner; hackmode for the hacking week, off by default, widens the limit per address and leaves the counter per name off for one demo account
 
 ## Branches
 

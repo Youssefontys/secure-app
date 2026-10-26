@@ -3,7 +3,7 @@
 BoK/Threat Analysis/entries.md in its header. NOTE: empties the tables users and auth_throttle, so all local
 accounts and notes are gone afterwards. That is why it only runs with --wipe:
 
-    docker compose up --build --wait
+    python scripts/deployment.py local
     python tests/securitytest.py --wipe                all tests
     python tests/securitytest.py --wipe bruteforce     only bruteforcetest.py; more names are allowed too
 

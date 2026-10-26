@@ -1,7 +1,20 @@
-"""Brute force: the attempt limits per name and per address, simultaneous requests and the limit on registering
-(MIT-06, MIT-10, MIT-30). Runs through securitytest.py."""
+"""Brute force: the attempt limits per name and per address, simultaneous requests, hackmode and the limit on registering
+(MIT-06, MIT-10, MIT-30, MC-18). Runs through securitytest.py."""
 import securitytest
 from securitytest import *
+
+HACK = """
+import app, throttle
+from db import query
+with app.app.app_context():
+    a, = throttle.password_limits("hackingweek", "198.51.100.1")
+    b = throttle.password_limits("testacc1", "198.51.100.1")
+    first = [throttle.attempt(a) for _ in range(101)]
+    query("UPDATE auth_throttle SET locked_until = now() - interval '1 minute', lock_count = 3,"
+          " window_start = now() - interval '20 minutes' WHERE key = %s", (a.key,))
+    again = [throttle.attempt(a) for _ in range(101)]
+    print(throttle.POLICIES["password_ip"].max_failures, len(b), first.count(0), first[-1], again[-1])
+"""
 
 
 def run():
@@ -29,6 +42,16 @@ def run():
     check("IPv4 behind IPv6, IPv6 per /64, plain IPv4", in_app(
         "import throttle; print(*(throttle.client_ip(a) for a in ('::ffff:203.0.113.7', '2001:db8::1', '192.0.2.1')))").stdout.strip(),
         "203.0.113.7 2001:db8::/64 192.0.2.1")
+
+    print("== hackmode (MC-18)")
+    check("hackweek: 100 per address, demo account without a counter per name, 5 min locked",
+          in_app(HACK, "THROTTLE_IP_MODE=hackweek", "THROTTLE_PAIR_EXEMPT_USERS=hackingweek").stdout.split(), ["100", "2", "100", "5", "5"])
+    check("  hackweek: 60 new accounts per hour per address, 5 min locked",
+          in_app("import throttle; print(*throttle.POLICIES['register_ip'])", "THROTTLE_IP_MODE=hackweek").stdout.split(), ["60", "60", "5", "5"])
+    bad = in_app("import throttle", "THROTTLE_IP_MODE=hackwek")
+    check("  typo in the mode: the app does not start", (bad.returncode != 0, "Unknown THROTTLE_IP_MODE" in bad.stderr), (True, True))
+    check("  strict without a setting", in_app("import throttle; print(throttle.POLICIES['password_ip'].max_failures,"
+                                               " len(throttle.password_limits('hackingweek', '198.51.100.1')))").stdout.split(), ["20", "2"])
     unlock()
 
     print("== registering (MIT-30)")

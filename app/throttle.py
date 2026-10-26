@@ -27,6 +27,15 @@ POLICIES = {
     # New accounts per address, successful ones too: every registration costs an Argon2id calculation of 19 MiB (MIT-30).
     "register_ip": Policy(10, 60, 60, 4 * 60),
 }
+# Hackmode for the hacking week: a class behind one school address. Wider, and a fixed lockout of
+# 5 minutes without doubling: a scanner is still slowed down, the class waits at most 5 minutes (MC-18).
+IP_MODES = {"strict": {}, "hackweek": {"password_ip": Policy(100, 15, 5, 5), "register_ip": Policy(60, 60, 5, 5)}}
+_mode = os.environ.get("THROTTLE_IP_MODE", "strict")
+if _mode not in IP_MODES:
+    raise RuntimeError(f"Unknown THROTTLE_IP_MODE {_mode!r}; choose from {', '.join(IP_MODES)}.")
+POLICIES.update(IP_MODES[_mode])
+# Names without a counter per name per address, for the demo account: otherwise one classmate locks it for the class.
+PAIR_EXEMPT = {name.strip() for name in os.environ.get("THROTTLE_PAIR_EXEMPT_USERS", "").split(",") if name.strip()}
 # A successful attempt does not clear this counter: otherwise an own account keeps resetting it.
 KEEP_ON_SUCCESS = {"password_ip"}
 
@@ -41,6 +50,8 @@ def limit(kind, *parts):
 # The counters of login and forgot password: per address and per name per address.
 def password_limits(username, remote_addr):
     ip = client_ip(remote_addr)
+    if username in PAIR_EXEMPT:
+        return (limit("password_ip", ip),)
     return limit("password_ip", ip), limit("password_account_ip", username, ip)
 
 
