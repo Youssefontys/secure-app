@@ -43,3 +43,10 @@ CREATE TABLE notes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ
 );
+
+-- The app logs in as this role, not as the owner (MIT-27): reading and writing in its
+-- own tables, and nothing else. No creating or dropping tables, no roles, no
+-- files or programs through COPY. db/app-password.sh sets the password, so it is not in this file.
+CREATE ROLE notes_app LOGIN;
+GRANT SELECT, INSERT, UPDATE, DELETE ON users, notes, auth_throttle TO notes_app;
+GRANT USAGE ON SEQUENCE users_id_seq, notes_id_seq TO notes_app;
