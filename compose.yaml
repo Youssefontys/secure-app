@@ -7,9 +7,12 @@ services:
       POSTGRES_DB: notes
       POSTGRES_USER: notes_owner
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Only for app-password.sh; the app itself does not get the password of the owner (MIT-27).
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
     volumes:
       - dbdata:/var/lib/postgresql
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/app-password.sh:/docker-entrypoint-initdb.d/02-app-password.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U notes_owner -d notes"]
       interval: 5s
@@ -27,7 +30,8 @@ services:
       DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY in .env}
       # Locally the app runs on HTTP; without this line the safe default applies (HTTPS only).
       HTTPS_ONLY: "0"
-      DATABASE_URL: postgresql://notes_owner:${POSTGRES_PASSWORD}@db:5432/notes
+      # A role of its own: reading and writing in its own tables, nothing else (MIT-27, MC-08).
+      DATABASE_URL: postgresql://notes_app:${APP_DB_PASSWORD}@db:5432/notes
     ports:
       - "127.0.0.1:5000:5000"
     healthcheck:
