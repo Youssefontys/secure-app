@@ -7,7 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Then remove pip itself: the app does not use it, and pip brings its own copies of urllib3, msgpack and
+# setuptools, in which Trivy found known vulnerabilities (MC-11, research subquestion 1).
+RUN pip install --no-cache-dir -r requirements.txt \
+ && pip uninstall --yes pip
 
 COPY . .
 
