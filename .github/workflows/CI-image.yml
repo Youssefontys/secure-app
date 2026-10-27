@@ -1,6 +1,6 @@
-# Builds the image and makes its SBoM: on every pull request to main in the job check, which publishes nothing, and on
-# every push to main again in the job image, which then puts the image on ghcr.io with the token of the run.
-# Only the SBoM for now (research, subquestion 1): no scan and no brake yet.
+# Builds the image, makes its SBoM and scans it: on every pull request to main in the job check, which then also runs
+# the security test and publishes nothing, and on every push to main again in the job image, which puts the image on
+# ghcr.io after a clean scan, with the token of the run (research, subquestion 1).
 # A package created this way gets the visibility of the repo.
 # Two tags, never latest (MIT-03): the commit, and the content of app/ (the tree hash of git), so a commit that only
 # changes something outside app/ points to the same image.
@@ -22,7 +22,7 @@ env:
 
 jobs:
   # On a pull request, only with read rights: on a pull request from a fork GitHub gives no more anyway.
-  # The steps with an & are in the job image once more, with a *: this way the check makes exactly what is published.
+  # The steps with an & are in the job image once more, with a *: this way the check scans exactly what is published.
   check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -54,7 +54,7 @@ jobs:
           docker run --rm -v "$RUNNER_TEMP:/scan" "$TRIVY" image --input /scan/image.tar --format cyclonedx --output /scan/sbom.json --quiet
           jq --arg name "$IMAGE:$GITHUB_SHA" '.metadata.component.name = $name' "$RUNNER_TEMP/sbom.json" > sbom.cdx.json
 
-      # Kept with the run; GitHub keeps it 90 days, the maximum for a public repo.
+      # Kept with the run, also if the scan after this finds a vulnerability; GitHub keeps it 90 days, the maximum for a public repo.
       - &keep
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -62,7 +62,23 @@ jobs:
           path: sbom.cdx.json
           retention-days: 90
 
-  # On a push to main, or by hand: the same steps, and then to ghcr.io.
+      # The brake (MIT-35), on the SBoM: every known vulnerability of HIGH or CRITICAL with a fix makes the job fail.
+      # Those without a fix pass for now; deciding on them is subquestion 2. On a pull request the ruleset then blocks
+      # the merge, on a push the job stops before publishing.
+      - &scan
+        name: Scan for known vulnerabilities
+        run: docker run --rm -v "$PWD:/scan" "$TRIVY" sbom /scan/sbom.cdx.json --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+
+      # The security test (tests/securitytest.py) against the stack of compose.yaml, only in the check: if a check fails,
+      # the job fails and the ruleset blocks the merge (MIT-39). Without a terminal deployment.py asks no questions and makes
+      # throwaway secrets in .env, which only exist on this runner.
+      - name: Security test
+        timeout-minutes: 20
+        run: |
+          python3 scripts/deployment.py local < /dev/null
+          python3 -u tests/securitytest.py --wipe
+
+  # On a push to main, or by hand: the same steps, and only after a clean scan to ghcr.io.
   image:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
@@ -74,6 +90,7 @@ jobs:
       - *build
       - *sbom
       - *keep
+      - *scan
 
       # The token through stdin and an environment variable, not in the command itself.
       - name: Push to ghcr.io
