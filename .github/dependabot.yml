@@ -6,6 +6,10 @@ updates:
     directory: /app
     schedule:
       interval: weekly
+    # psycopg and psycopg-binary only work on the same version: one pull request for both, not two that each fail.
+    groups:
+      psycopg:
+        patterns: ["psycopg", "psycopg-binary"]
   - package-ecosystem: docker
     directory: /app
     schedule:
