@@ -19,7 +19,9 @@ The baseline only does what is needed to be functional: register, log in, log ou
 - `compose.yaml` - app and database for local use
 - `.github/dependabot.yml` - weekly update proposals for the pinned packages, images and GitHub Actions
 - `.github/workflows/CI-image.yml` - on every pull request to `main`, builds the image, makes its SBoM, scans it and runs the security test, without publishing (the job `check`, required by the ruleset on `main`); on every push to `main`, does the same without the test and then publishes the image to ghcr.io, tagged with the commit and with the content of `app/`
-- `scripts/` - `deployment.py` to deploy locally and to remove it all again. It asks what to do and starts `deploy_local.py` or `undo.py`, which take what they share from it: paths, questions, stopping and hackmode
+- `scripts/` - `deployment.py` to deploy locally or to Azure, and to remove it all again. It asks what to do and starts `deploy_local.py`, `deploy_azure.py` or `undo.py`; `setup_azure.py` sets up the Terraform state storage once, which take what they share from it: paths, questions, stopping and hackmode
+- `terraform/` - Azure: Container Apps, PostgreSQL B1ms in a private network and Key Vault; secrets stay out of the Terraform state. `deploy.tf` is the identity for deploying from GitHub, only when you choose that
+- `.github/workflows/CI-iac.yml` - on every pull request that changes `terraform/`, Trivy checks it for misconfigurations, with a decision per finding in `.trivyignore.yaml`
 - `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
 ## Run it
@@ -59,6 +61,7 @@ python -u tests/securitytest.py --wipe
 - Week 7, secrets: `deployment.py local` creates every missing secret in `.env` with 256 random bits, never shows it, and makes `.env` readable only for its owner; hackmode for the hacking week, off by default, widens the limit per address and leaves the counter per name off for one demo account
 - Week 7, pipeline: GitHub Actions builds the image on every pull request and push to `main` and keeps a CycloneDX SBoM of it for 90 days, with only the rights each job needs and every action pinned on a commit; on a push to `main` it publishes the image to ghcr.io
 - Autumn break, scan and check: Trivy scans the SBoM, and every known vulnerability of HIGH or CRITICAL with a fix fails the job, so it is not merged or published; pip is removed from the image, with its own vulnerable copies; the security test runs on every pull request, and the ruleset on `main` requires the job `check`
+- Week 8, Azure: Container Apps, PostgreSQL B1ms only in a private network with TLS and verify-full, Key Vault with RBAC and secrets kept out of the state, the security log in Log Analytics and a mail on a lockout, also to Blue Teamers; deployed by digest; the real client address behind the proxy (TRUSTED_PROXIES); a level and category on every security event; key rotation for the data key; and Trivy checks `terraform/` on every pull request that changes it
 
 ## Branches
 
