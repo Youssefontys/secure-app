@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, render_template, request
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import account
 import auth
@@ -29,6 +30,10 @@ app = Flask(__name__, template_folder="web/templates", static_folder="web/static
 app.secret_key = os.environ["FLASK_SECRET_KEY"]
 if len(app.secret_key) < 32:
     raise RuntimeError("FLASK_SECRET_KEY must be at least 32 characters.")
+# On Azure: the real client address behind the one proxy of Container Apps (MC-18). Locally 0.
+# Only 0 or 1: with -1 or 2 an attacker picks their own address and gets around the limits.
+if setting("TRUSTED_PROXIES", "0", ("0", "1")) == "1":
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 # Safe by default: the session cookie only over HTTPS (MC-04). Locally, on HTTP, compose.yaml turns this off.
 app.config["SESSION_COOKIE_SECURE"] = setting("HTTPS_ONLY", "1", ("0", "1")) == "1"
 # Not sent with a form from another site (MC-05); the CSRF token is the second layer.
