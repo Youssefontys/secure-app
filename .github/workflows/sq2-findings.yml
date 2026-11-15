@@ -1,0 +1,60 @@
+# Research, subquestion 2: every finding of Trivy on the image of main, without a filter, with the chance of misuse
+# (EPSS of FIRST), whether it is exploited in the wild (KEV of CISA), and which packages the app really loads while the
+# security test runs. Only on lab branches (lab/...), which are never merged; the script is in lab/triage/.
+name: SQ2 findings
+
+on:
+  push:
+    branches: ["lab/**"]
+  workflow_dispatch:
+
+# No rights by default; the job only reads the code.
+permissions: {}
+
+env:
+  # The same Trivy as in CI-image.yml, pinned on version and digest (MIT-03).
+  TRIVY: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+
+jobs:
+  findings:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The same image as the check builds, and its SBoM, as in CI-image.yml.
+      - name: Build and make the SBoM
+        run: |
+          docker build -q -t lab/notes app
+          mkdir -p "$RUNNER_TEMP/out"
+          docker save lab/notes -o "$RUNNER_TEMP/image.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan" "$TRIVY" image --input /scan/image.tar --format cyclonedx --output /scan/out/sbom.json --quiet
+
+      # Every severity and also the findings without a fix: the brake filters, this measurement does not.
+      - name: Scan without a filter
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/out:/scan" "$TRIVY" sbom /scan/sbom.json --format json --output /scan/scan.json --quiet
+          docker run --rm -v "$RUNNER_TEMP/out:/scan" "$TRIVY" sbom /scan/sbom.json --severity HIGH,CRITICAL --quiet | tee "$RUNNER_TEMP/out/high-critical.txt"
+
+      # Reachability: the stack runs the security test, so every route has been used; then every file that a process of
+      # the app has mapped (/proc/<pid>/maps), and the Debian package each file belongs to.
+      - name: What the app loads
+        run: |
+          python3 scripts/deployment.py local < /dev/null
+          python3 -u tests/securitytest.py --wipe > "$RUNNER_TEMP/out/securitytest.txt" || true
+          docker compose exec -T app sh -c 'cat /proc/[0-9]*/maps 2>/dev/null' | awk '$6 ~ /^\// {print $6}' | sort -u > "$RUNNER_TEMP/out/loaded-files.txt"
+          docker compose exec -T app sh -c 'xargs -r dpkg -S 2>/dev/null' < "$RUNNER_TEMP/out/loaded-files.txt" | cut -d: -f1 | tr ',' '\n' | sed 's/ //g' | sort -u > "$RUNNER_TEMP/out/loaded-packages.txt"
+          wc -l "$RUNNER_TEMP/out/loaded-files.txt" "$RUNNER_TEMP/out/loaded-packages.txt"
+
+      - name: EPSS, KEV and the summary
+        run: python3 lab/triage/findings.py "$RUNNER_TEMP/out" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sq2-findings-${{ github.sha }}
+          path: ${{ runner.temp }}/out/
+          retention-days: 90
