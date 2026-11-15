@@ -48,8 +48,16 @@ def starts(*env):
 
 def run():
     print("== configuration is input (MIT-23)")
-    check("HTTPS_ONLY=yes does not start", starts("HTTPS_ONLY=yes"), "HTTPS_ONLY must be 0 or 1, not 'yes'.")
+    check("TRUSTED_PROXIES 0 and 1 start", (starts("TRUSTED_PROXIES=0"), starts("TRUSTED_PROXIES=1")), ("start", "start"))
+    check("  -1 and 2 do not start", (starts("TRUSTED_PROXIES=-1"), starts("TRUSTED_PROXIES=2")),
+          ("TRUSTED_PROXIES must be 0 or 1, not '-1'.", "TRUSTED_PROXIES must be 0 or 1, not '2'."))
+    check("  HTTPS_ONLY=yes does not start", starts("HTTPS_ONLY=yes"), "HTTPS_ONLY must be 0 or 1, not 'yes'.")
     check("  too short FLASK_SECRET_KEY does not start", starts("FLASK_SECRET_KEY=short"), "FLASK_SECRET_KEY must be at least 32 characters.")
+    check("  DATA_ENCRYPTION_KEY of 128 bits does not start", starts("DATA_ENCRYPTION_KEY=" + "ab" * 16), "DATA_ENCRYPTION_KEY must be 64 hex characters (256 bits).")
+    check("  a previous key with the same version as the current one does not start", starts("DATA_ENCRYPTION_KEY_PREVIOUS=" + "cd" * 32),
+          "The previous key must have another version than the current key.")
+    check("  a key version that is not v and digits does not start", starts("DATA_ENCRYPTION_KEY_VERSION=x1"), "A key version looks like v1, v2, ...")
+    check("  a new version with the old key as previous starts", starts("DATA_ENCRYPTION_KEY_VERSION=v2", "DATA_ENCRYPTION_KEY_PREVIOUS=" + "cd" * 32), "start")
     check("without HTTPS_ONLY: cookie only over HTTPS (safe by default)", in_app(
         "import app; print(app.app.config['SESSION_COOKIE_SECURE'])", run=("env", "-u", "HTTPS_ONLY", "python", "-c")).stdout.strip(), "True")
 

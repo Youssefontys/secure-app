@@ -6,3 +6,13 @@ __pycache__/
 
 # Virtual environment, if you run the app or tests outside Docker.
 .venv/
+
+# Made by scripts/setup_azure.py: subscription and tenant ID of your Azure environment.
+backend.conf
+
+# Terraform: providers, state and plans do not belong in git; .terraform.lock.hcl does (pinned hashes, MIT-03).
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log

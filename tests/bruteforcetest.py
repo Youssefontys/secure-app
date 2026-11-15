@@ -42,6 +42,9 @@ def run():
     check("IPv4 behind IPv6, IPv6 per /64, plain IPv4", in_app(
         "import throttle; print(*(throttle.client_ip(a) for a in ('::ffff:203.0.113.7', '2001:db8::1', '192.0.2.1')))").stdout.strip(),
         "203.0.113.7 2001:db8::/64 192.0.2.1")
+    check("  with the port after it, as Azure sends it", in_app(
+        "import throttle; print(*(throttle.client_ip(a) for a in ('203.0.113.9:54321', '[2001:db8::1]:54321', '[2001:db8::1]')))").stdout.strip(),
+        "203.0.113.9 2001:db8::/64 2001:db8::/64")
 
     print("== hackmode (MC-18)")
     check("hackweek: 100 per address, demo account without a counter per name, 5 min locked",
