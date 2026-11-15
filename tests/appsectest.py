@@ -118,6 +118,23 @@ def run():
     check("  static files may be cached", req(client(), "/static/style.css")[2].get("Cache-Control") != "no-store", True)
     check("session of 7 hours works, of 9 hours and 30 days not", json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", "302 /login"])
 
+    print("== a changed cookie is refused (MC-04)")
+    good = next(c.value for c in ch.jar if c.name == "session")
+
+    def with_cookie(value):
+        try:
+            return str(client().open(urllib.request.Request(B + "/", headers={"Cookie": "session=" + value})).status)
+        except urllib.error.HTTPError as e:
+            return f"{e.code} {e.headers.get('Location')}"
+
+    flip = lambda text, i: text[:i] + ("A" if text[i] != "A" else "B") + text[i + 1:]
+    check("the cookie as it was given works", with_cookie(good), "200")
+    # Not the last character of the signature: its last bits are padding, and a change there can leave the value the same.
+    check("  one character changed in the signature, or in the data: back to the login", (with_cookie(flip(good, -6)), with_cookie(flip(good, 3))),
+          ("302 /login", "302 /login"))
+    check("  the signature removed, or only the data left: back to the login", (with_cookie(good.rsplit(".", 1)[0]), with_cookie(good.split(".")[0])),
+          ("302 /login", "302 /login"))
+
     print("== database role (MIT-27)")
     probe = json.loads(in_app(ROLE_PROBE).stdout)
     check("the app logs in as notes_app, no superuser", probe.pop("role"), ["notes_app", False])

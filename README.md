@@ -22,6 +22,8 @@ The baseline only does what is needed to be functional: register, log in, log ou
 - `scripts/` - `deployment.py` to deploy locally or to Azure, and to remove it all again. It asks what to do and starts `deploy_local.py`, `deploy_azure.py` or `undo.py`; `setup_azure.py` sets up the Terraform state storage once, which take what they share from it: paths, questions, stopping and hackmode
 - `terraform/` - Azure: Container Apps, PostgreSQL B1ms in a private network and Key Vault; secrets stay out of the Terraform state. `deploy.tf` is the identity for deploying from GitHub, only when you choose that
 - `.github/workflows/CD-azure.yml` - after Image succeeded on a push to `main` that changed `app/`, puts that image on Azure by digest once you approve it, signed in through OIDC without a password or key in GitHub; it only changes the image of the container app
+- `.github/workflows/CI-dast.yml` - on every pull request to `main`, the ZAP baseline (DAST) against the app on the runner, with a decision per finding in `zap-rules.tsv`; a finding without one fails the job
+- `SECURITY.md` - how to report a vulnerability privately, and what is in scope
 - `.github/workflows/CI-iac.yml` - on every pull request that changes `terraform/`, Trivy checks it for misconfigurations, with a decision per finding in `.trivyignore.yaml`
 - `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
@@ -64,6 +66,7 @@ python -u tests/securitytest.py --wipe
 - Autumn break, scan and check: Trivy scans the SBoM, and every known vulnerability of HIGH or CRITICAL with a fix fails the job, so it is not merged or published; pip is removed from the image, with its own vulnerable copies; the security test runs on every pull request, and the ruleset on `main` requires the job `check`
 - Week 8, Azure: Container Apps, PostgreSQL B1ms only in a private network with TLS and verify-full, Key Vault with RBAC and secrets kept out of the state, the security log in Log Analytics and a mail on a lockout, also to Blue Teamers; deployed by digest; the real client address behind the proxy (TRUSTED_PROXIES); a level and category on every security event; key rotation for the data key; and Trivy checks `terraform/` on every pull request that changes it
 - Week 8, CD: after a merge that changes `app/`, GitHub Actions deploys the new image by digest once you approve it in the environment `azure`, through OIDC and a deploy identity that may only change the container app; the job image only runs from `main` and reuses a published image, so the tag `app-<tree>` never moves
+- Week 8, SAST and DAST: CodeQL on every pull request, required by the ruleset for HIGH or higher; Dependabot security updates; private vulnerability reporting with `SECURITY.md`; a secret scan in the check with a self-test that must find a planted token; the ZAP baseline on every pull request with a decision per rule; and the test vectors of RFC 6238 and 4226, a huge note number and a changed cookie in the security test
 
 ## Branches
 
