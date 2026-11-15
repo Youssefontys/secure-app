@@ -1,10 +1,17 @@
 # Pinned on version and digest (MIT-03): a tag like 3.15-slim moves along with every new build of the image.
-FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
+FROM python:3.15.2-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
+
+# zlib1g on the version Debian Security has (CVE-2026-76844 and CVE-2026-85091): the base image of 15-11-2026 does not
+# have it yet. Pinned on version (MIT-03): when Debian replaces it, the build fails, so update it then; when the base
+# image has it, remove this step.
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 # Then remove pip itself: the app does not use it, and pip brings its own copies of urllib3, msgpack and
