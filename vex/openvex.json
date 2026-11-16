@@ -224,9 +224,7 @@
           "@id": "pkg:deb/debian/perl-base@5.40.1-6%2Bdeb13u1"
         }
       ],
-      "status": "not_affected",
-      "justification": "vulnerable_code_not_present",
-      "impact_statement": "The flaw is in the Perl module Archive::Tar. perl-base does not contain that module, and no other Perl modules are installed."
+      "status": "not_affected"
     },
     {
       "vulnerability": {
