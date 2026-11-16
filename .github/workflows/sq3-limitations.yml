@@ -1,0 +1,66 @@
+# Research, subquestion 3: SBoMs of the same image from Trivy, Syft, cdxgen and cyclonedx-py, each scanned with Trivy and
+# with Grype and checked with cyclonedx-cli, next to what is really in the running image. On a runner of GitHub, not
+# locally. Only on lab branches (lab/...), which are never merged; the scripts are in lab/sq3/.
+name: SQ3 limitations
+
+on:
+  push:
+    branches: ["lab/**"]
+  workflow_dispatch:
+
+# No rights by default; the job only reads the code, and the image on ghcr.io is public.
+permissions: {}
+
+# With pipefail: an error before tee then fails the step.
+defaults:
+  run:
+    shell: bash
+
+env:
+  # The image of main after week 9 (1989d6d), with psycopg-binary.
+  IMAGE: ghcr.io/youssefontys/secure-app:1989d6d96ea6dc40875c4fec2d8e76209c63d65e
+  # The same versions as the measurement of secure-application on 20-10-2026; cyclonedx-cli on the SHA-256 of the release.
+  CDXGEN: "12.8.5"
+  CYCLONEDX_BOM: "7.5.0"
+  CYCLONEDX_CLI: https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.33.1/cyclonedx-linux-x64
+  CYCLONEDX_CLI_SHA256: bfc8b2538da86fe239bc53658bbb63c1c8c510a293c1e6891aa5bea5d3c58746
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # cdxgen needs Node.js 24 or newer.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      - name: Install the CycloneDX tools
+        run: |
+          npm install --global --no-fund --no-audit "@cyclonedx/cdxgen@$CDXGEN"
+          python3 -m pip install --user --quiet "cyclonedx-bom==$CYCLONEDX_BOM"
+          curl -sSfL -o "$RUNNER_TEMP/cyclonedx" "$CYCLONEDX_CLI"
+          echo "$CYCLONEDX_CLI_SHA256  $RUNNER_TEMP/cyclonedx" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/cyclonedx"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Measure
+        run: |
+          { echo '```'; cdxgen --version; cyclonedx-py --version; cyclonedx --version
+            python3 lab/sq3/measure.py "$IMAGE" "$RUNNER_TEMP/measurement"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The SBoMs, the scans, inside.json and results.json; also when the measurement fails halfway.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sq3-limitations
+          path: |
+            ${{ runner.temp }}/measurement
+            !${{ runner.temp }}/measurement/img.tar
+          retention-days: 90

@@ -1,0 +1,55 @@
+# Proof after research subquestion 3: psycopg-binary, with its bundled libraries, against psycopg with the libpq of
+# Debian. One after the other on one runner, with the local stack: the security test, what the app loads, the brake as
+# in the pipeline (with the VEX of main) and the speed. Only on lab branches (lab/...), which are never merged; the
+# scripts are in lab/psycopg/.
+name: SQ3 psycopg proof
+
+on:
+  push:
+    branches: ["lab/**"]
+  workflow_dispatch:
+
+# No rights by default; the job only reads the code.
+permissions: {}
+
+# With pipefail: an error before tee then fails the step.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Without a terminal deployment.py asks nothing and makes throwaway secrets in .env.
+      - name: With psycopg-binary, as on main
+        run: |
+          python3 scripts/deployment.py local < /dev/null
+          python3 lab/psycopg/measure.py binary "$RUNNER_TEMP/proof/binary"
+          docker compose down -v
+
+      - name: With psycopg and the libpq of Debian
+        run: |
+          python3 lab/psycopg/variant.py
+          git diff app/
+          python3 scripts/deployment.py local < /dev/null
+          python3 lab/psycopg/measure.py libpq "$RUNNER_TEMP/proof/libpq"
+          docker compose down -v
+
+      - name: Compare
+        run: python3 lab/psycopg/measure.py compare "$RUNNER_TEMP/proof" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sq3-psycopg-proof
+          path: |
+            ${{ runner.temp }}/proof
+            !${{ runner.temp }}/proof/*/img.tar
+          retention-days: 90
