@@ -1,5 +1,5 @@
 """Application security: configuration as input, input validation, the consent at registration, closed by default, headers, CSRF, only POST, cache and
-session lifetime, the rights of the database role, and the libraries the app loads (MIT-20 to MIT-29, MIT-41, MIT-48). Runs through securitytest.py."""
+session lifetime, the rights of the database role, and the libraries the app loads (MIT-20 to MIT-29, MIT-41, MIT-43, MIT-48). Runs through securitytest.py."""
 from securitytest import *
 
 CSP = "default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
@@ -177,7 +177,10 @@ def run():
           "DROP TABLE notes": "refused", "TRUNCATE notes": "refused", "ALTER TABLE users ADD COLUMN x int": "refused",
           "CREATE ROLE intruder": "refused", "COPY (SELECT 1) TO PROGRAM 'true'": "refused"})
 
-    print("== libraries the app loads (MIT-41)")
+    print("== libraries the app loads (MIT-41, MIT-43)")
+    # The pure Python psycopg loads the libpq of Debian; "binary" would mean psycopg-binary is back, with its own copies of
+    # libpq, OpenSSL and krb5 that Debian does not update and the scan does not see.
+    check("psycopg uses the libpq of Debian, not a copy of its own", in_app("import psycopg; print(psycopg.pq.__impl__)").stdout.strip(), "python")
     # vex/openvex.json says libsqlite3-0 is not in the execute path: it is there because liblastlog2-2 needs it, and the app
     # never loads either. After all tests above, every process (gunicorn and its workers) has been in use.
     seen = in_app(MAPS_PROBE).stdout.strip()

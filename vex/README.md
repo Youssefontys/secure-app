@@ -28,6 +28,13 @@ when checking them:
 Severity alone therefore says little about this image. What counts is whether the vulnerable code is there, whether it
 runs, and whether an attacker can reach it.
 
+In week 11 psycopg-binary went, with its own copies of libpq, OpenSSL and krb5 that the scan did not see; the libpq of
+Debian came in its place (MIT-43). That made krb5 visible: 56 more HIGH findings, 14 vulnerabilities in each of its 4
+client libraries (lab run 43919960192, tag `sq3-measurement`, 16-11-2026). 11 are in kadmind or the KDC, Kerberos
+servers that are not in the image: `vulnerable_code_not_present`. 3 are in code that libkrb5 shares with the KDC, which
+an attacker only reaches through a Kerberos server, and the app talks to none; the security test checks that:
+`vulnerable_code_cannot_be_controlled_by_adversary`. More findings, but each one now has an owner who updates it.
+
 ## The flow
 
 Per vulnerability, not per finding: first group the findings of the same vulnerability.
