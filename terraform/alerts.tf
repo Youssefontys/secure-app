@@ -101,7 +101,9 @@ resource "azurerm_role_assignment" "alert_reader" {
 
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
 # any role, and this is where that shows. From the activity log of Azure, not from the log of the app, and free.
-# Terraform assigns roles itself too: a mail right after an apply is your own.
+# Only Succeeded: Azure logs every assignment twice, Started and Succeeded, and an activity log alert mails on every
+# event. And only after the role assignments of Terraform itself, so the first apply does not mail its own; a later
+# apply that assigns a role does, and that mail is your own.
 resource "azurerm_monitor_activity_log_alert" "roles" {
   name                = "alert-${local.name}-roles"
   resource_group_name = azurerm_resource_group.main.name
@@ -110,9 +112,18 @@ resource "azurerm_monitor_activity_log_alert" "roles" {
   description         = "A role was assigned in the subscription (MC-31)."
   tags                = local.tags
 
+  depends_on = [
+    azurerm_role_assignment.alert_reader,
+    azurerm_role_assignment.app_secrets,
+    azurerm_role_assignment.deploy,
+    azurerm_role_assignment.kv_operator,
+    azurerm_role_assignment.schema_secrets,
+  ]
+
   criteria {
     category       = "Administrative"
     operation_name = "Microsoft.Authorization/roleAssignments/write"
+    statuses       = ["Succeeded"]
   }
 
   action {
