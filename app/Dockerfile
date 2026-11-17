@@ -6,11 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# zlib1g on the version Debian Security has (CVE-2026-76844 and CVE-2026-85091): the base image of 15-11-2026 does not
-# have it yet. Pinned on version (MIT-03): when Debian replaces it, the build fails, so update it then; when the base
-# image has it, remove this step.
+# The libpq of Debian, pinned on version (MIT-03): psycopg loads it, Debian updates it and the scan sees it, with what
+# it pulls in (MIT-43). When a newer version comes out, this one disappears from Debian and the build fails: update it then.
+# zlib1g too, on the version Debian Security has (CVE-2026-76844 and CVE-2026-85091): the base image of 15-11-2026 does
+# not have it yet. Pinned the same way; when the base image has it, remove it here.
 RUN apt-get update \
- && apt-get install --yes --no-install-recommends zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
+ && apt-get install --yes --no-install-recommends libpq5=17.12-0+deb13u1 zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

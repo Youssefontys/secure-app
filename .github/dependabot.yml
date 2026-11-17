@@ -6,16 +6,12 @@ updates:
     directory: /app
     schedule:
       interval: weekly
-    # psycopg and psycopg-binary only work on the same version: one pull request for both, not two that each fail.
-    groups:
-      psycopg:
-        patterns: ["psycopg", "psycopg-binary"]
   - package-ecosystem: docker
     directory: /app
     schedule:
       interval: weekly
-    # Patches of Python (3.15.x) come in by themselves; a new minor version is a step of its own, because
-    # psycopg-binary needs a wheel for it first. Docker tags do not mark an alpha, so 3.16.0a1 would also come.
+    # Patches of Python (3.15.x) come in by themselves; a new minor version is a step of its own, because cffi needs a
+    # wheel for it first: the image has no compiler to build it. Docker tags do not mark an alpha, so 3.16.0a1 would also come.
     ignore:
       - dependency-name: python
         update-types: ["version-update:semver-minor"]
