@@ -54,6 +54,16 @@ locals {
       window      = "PT15M"
       above       = var.throttle_ip_mode == "hackweek" ? 120 : 25
     }
+    # AZKVAuditLogs, the resource-specific table from the diagnostic settings in keyvault.tf: a SecretGet by
+    # anyone other than the app's own identity (the vault) or the schema job's identity (the owner's vault).
+    # The exact field for the caller's identity is not yet proven against a real row (T-xxx, to measure after
+    # the first apply); skip_query_validation covers the table not existing yet, the same reason as the others.
+    keyvault-read = {
+      description = "A Key Vault secret was read by something other than the app's own identity (MC-22, MC-28)."
+      query       = "AZKVAuditLogs | where identity_claim_oid_g !in (\"${azurerm_user_assigned_identity.app.principal_id}\", \"${azurerm_user_assigned_identity.schema.principal_id}\") | where OperationName == \"SecretGet\""
+      window      = "PT15M"
+      above       = 0
+    }
   }
 }
 
