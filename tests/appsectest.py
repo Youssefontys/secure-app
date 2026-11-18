@@ -141,6 +141,16 @@ def run():
     check("  with the own token: created", loc(req(ca, "/", {"title": "With token", "body": "x"})), "302 /")
     check("  logging in without a token: 400", req(client(), "/login", {"username": "testacc12", "password": PW}, csrf=False)[0], 400)
 
+    print("== Fetch Metadata (MC-05)")
+    check("  Sec-Fetch-Site cross-site: 400, even with the right token",
+          req(ca, "/", {"title": "Cross-site", "body": "x"}, headers={"Sec-Fetch-Site": "cross-site"})[0], 400)
+    check("  Sec-Fetch-Site same-origin: still works",
+          loc(req(ca, "/", {"title": "Same-site", "body": "x"}, headers={"Sec-Fetch-Site": "same-origin"})), "302 /")
+    check("  no Sec-Fetch-Site, a foreign Origin: 400",
+          req(ca, "/", {"title": "Bad origin", "body": "x"}, headers={"Origin": "https://evil.example"})[0], 400)
+    check("  no Sec-Fetch-Site, the own Origin: still works",
+          loc(req(ca, "/", {"title": "Own origin", "body": "x"}, headers={"Origin": B})), "302 /")
+
     print("== only POST acts")
     unlock()
     heads = [urllib.request.urlopen(urllib.request.Request(B + "/login", method="HEAD")).status for _ in range(3)]
