@@ -64,6 +64,17 @@ locals {
       window      = "PT15M"
       above       = 0
     }
+    # Container Apps puts its own events in a second table, ContainerAppSystemLogs_CL: a cold start alone makes
+    # ProbeFailed (the readiness probe, before Gunicorn is up) and a successful one-shot job container both
+    # Warning, in about half of all cold starts (measured over 43 events, two days, 17-11-2026 and 18-11-2026);
+    # neither is a problem. What is left after excluding both is a real, unplanned one, such as the platform's own
+    # "RevisionFailure" seen once in that same measurement.
+    restart = {
+      description = "A replica of the container app had an unplanned problem (not a cold start warming up, not a job container exiting cleanly)."
+      query       = "ContainerAppSystemLogs_CL | where Type_s == \"Warning\" | where Reason_s != \"ProbeFailed\" | where not(Log_s has \"exit code '0'\")"
+      window      = "PT15M"
+      above       = 0
+    }
   }
 }
 
