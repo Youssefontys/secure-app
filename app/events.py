@@ -21,6 +21,7 @@ KINDS = {
     "twofa_reset": ("INFO", "account"), "recovery_code_new": ("INFO", "account"),
     "logout": ("INFO", "session"), "session_rejected": ("WARNING", "session"),
     "csrf_refused": ("WARNING", "request"), "note_limit": ("WARNING", "request"),
+    "authz_fail": ("WARNING", "request"), "input_malformed": ("WARNING", "request"),
     "note_unreadable": ("ERROR", "integrity"),
 }
 

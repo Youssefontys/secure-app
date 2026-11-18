@@ -106,6 +106,8 @@ def register():
     if request.form.get("consent") != "yes":
         return render_template("auth.html", error="Tick the box to agree to the privacy statement."), 400
     if not USERNAME.fullmatch(username):
+        # The form itself blocks this with pattern and maxlength: reaching here is not a browser typo.
+        events.event("input_malformed", field="username")
         return render_template("auth.html", error="Choose a username of 3 to 20 characters: letters, digits and _."), 400
     if error := passwords.password_problem(password):
         return render_template("auth.html", error=error), 400
