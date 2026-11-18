@@ -34,6 +34,32 @@ resource "azurerm_role_assignment" "kv_operator" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+# Who reads a secret, and when (MC-22, MC-28): on its own identity (Dedicated, not the shared AzureDiagnostics
+# table). The app's own identity reads at every cold start, to pass the secrets along as an environment
+# variable; the alert in alerts.tf filters that out, so only another identity reading counts.
+resource "azurerm_monitor_diagnostic_setting" "kv_main" {
+  name                           = "diag-${local.name}-kv-main"
+  target_resource_id             = azurerm_key_vault.main.id
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.main.id
+  log_analytics_destination_type = "Dedicated"
+
+  enabled_log {
+    category = "AuditEvent"
+  }
+}
+
+# The owner's vault: only the schema job's identity should ever read it (MIT-27).
+resource "azurerm_monitor_diagnostic_setting" "kv_admin" {
+  name                           = "diag-${local.name}-kv-admin"
+  target_resource_id             = azurerm_key_vault.admin.id
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.main.id
+  log_analytics_destination_type = "Dedicated"
+
+  enabled_log {
+    category = "AuditEvent"
+  }
+}
+
 # Ephemeral: Terraform makes the values but stores them nowhere; they only go write-only to Key Vault.
 ephemeral "random_bytes" "data_key" {
   length = 32
