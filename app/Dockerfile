@@ -14,7 +14,7 @@ RUN apt-get update \
  && apt-get install --yes --no-install-recommends libpq5=17.12-0+deb13u1 zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+ADD requirements.txt .
 # Then remove pip itself: the app does not use it, and pip brings its own copies of urllib3, msgpack and
 # setuptools, in which Trivy found known vulnerabilities (MC-11, research subquestion 1).
 RUN pip install --no-cache-dir -r requirements.txt \
