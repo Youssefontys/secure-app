@@ -1,15 +1,27 @@
 # Dependabot opens a pull request itself for a new version of a package or image (MIT-33, MC-11).
 # Everything is pinned (MIT-03), so without this even security patches never come in by themselves. No pipeline needed.
+# Cooldown (MC-11): time for the wider community to catch a compromised release before it is even proposed here.
+# Only for these version-update proposals; a security update (a known vulnerability) is never held back by it.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /app
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 1
   - package-ecosystem: docker
     directory: /app
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 1
     # Patches of Python (3.15.x) come in by themselves; a new minor version is a step of its own, because cffi needs a
     # wheel for it first: the image has no compiler to build it. Docker tags do not mark an alpha, so 3.16.0a1 would also come.
     ignore:
@@ -19,11 +31,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 1
   - package-ecosystem: terraform
     directory: /terraform
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 1
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+      semver-minor-days: 3
+      semver-patch-days: 1
