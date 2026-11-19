@@ -48,6 +48,18 @@ def output(name):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+# The app follows wherever the state storage actually lives, read live from Azure: one real source, instead of a
+# second region (variables.tf's own default) that only matches by coincidence. "" if backend.conf or the group is gone.
+def state_region():
+    conf = (REPO / "backend.conf").read_text(encoding="utf-8")
+    match = re.search(r'resource_group_name\s*=\s*"([^"]+)"', conf)
+    if not match:
+        return ""
+    result = subprocess.run([shutil.which("az"), "group", "show", "--name", match.group(1), "--query", "location", "-o", "tsv"],
+                            capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 # The environment azure in GitHub (MIT-44): only main may deploy, and only after your approval. The three IDs as
 # environment secrets: not secret, but this way the public log of a run does not show them. Already there counts as fine.
 def setup_github(github):
@@ -140,6 +152,8 @@ def run():
     oidc = gh("api", f"repos/{github}/actions/oidc/customization/sub", "--jq", ".sub_claim_prefix // empty") or f"repo:{github}"
     variables = [f"app_image={image}", f"alert_email={email}", f"github_oidc_prefix={oidc}",
                  f"deploy_from_github={'true' if from_github else 'false'}", f"blue_team_emails={json.dumps(blue)}"]
+    if region := state_region():
+        variables.append(f"location={region}")
     if hack["THROTTLE_IP_MODE"]:
         variables += ["throttle_ip_mode=hackweek", "min_replicas=1"]
     if hack["THROTTLE_PAIR_EXEMPT_USERS"]:
