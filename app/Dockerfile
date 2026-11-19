@@ -35,5 +35,9 @@ EXPOSE 5000
 
 # Gunicorn instead of the development server of Flask, which itself says it is not for
 # production (MC-14, MIT-26). Two workers, so two requests at the same time really run at the same time.
+# Threads on top (MC-10): a sync worker with --workers alone handles exactly one connection at a time, so
+# two slow, never-finished requests (measured: 2 trickling POSTs) left every other visitor without any
+# response for 10+ seconds. 4 threads per worker means it takes many more slow clients to do that, not two.
 # Without a control socket: we do not use it, and app deliberately has no home directory.
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--no-control-socket", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--worker-class", "gthread", \
+     "--no-control-socket", "app:app"]
