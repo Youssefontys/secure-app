@@ -123,10 +123,26 @@ resource "azurerm_role_assignment" "alert_reader" {
   principal_id         = each.value.identity[0].principal_id
 }
 
+# Creating this alert right after the role assignments is not enough: that only orders when Terraform creates
+# things, not when the assignment's own "Succeeded" event has actually travelled through Azure's activity-log
+# stream relative to when the alert starts evaluating. On a from-scratch deploy, with ~11 assignments landing
+# within a couple of seconds of each other, the alert caught a chunk of its own first batch (11 mails,
+# 19-11-2026). A real wait fixes the race a depends_on on the resources themselves cannot.
+resource "time_sleep" "role_assignments_settled" {
+  depends_on = [
+    azurerm_role_assignment.alert_reader,
+    azurerm_role_assignment.app_secrets,
+    azurerm_role_assignment.deploy,
+    azurerm_role_assignment.kv_operator,
+    azurerm_role_assignment.schema_secrets,
+  ]
+  create_duration = "15m"
+}
+
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
 # any role, and this is where that shows. From the activity log of Azure, not from the log of the app, and free.
 # Only Succeeded: Azure logs every assignment twice, Started and Succeeded, and an activity log alert mails on every
-# event. And only after the role assignments of Terraform itself, so the first apply does not mail its own; a later
+# event. Only created once the wait above is over, so the first apply does not mail its own; a later
 # apply that assigns a role does, and that mail is your own.
 resource "azurerm_monitor_activity_log_alert" "roles" {
   name                = "alert-${local.name}-roles"
@@ -136,13 +152,7 @@ resource "azurerm_monitor_activity_log_alert" "roles" {
   description         = "A role was assigned in the subscription (MC-31)."
   tags                = local.tags
 
-  depends_on = [
-    azurerm_role_assignment.alert_reader,
-    azurerm_role_assignment.app_secrets,
-    azurerm_role_assignment.deploy,
-    azurerm_role_assignment.kv_operator,
-    azurerm_role_assignment.schema_secrets,
-  ]
+  depends_on = [time_sleep.role_assignments_settled]
 
   criteria {
     category       = "Administrative"
