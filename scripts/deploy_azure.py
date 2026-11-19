@@ -97,6 +97,16 @@ def run():
     subscription, login = (account.stdout.splitlines() + ["", ""])[:2]
     print(f"\n☁️  Signed in to Azure, subscription: {subscription}")
 
+    # A merge on GitHub does not reach this folder by itself, and both the image tag and Terraform use what is checked
+    # out here: deployed from an older branch, a fix that is already on main quietly stays off Azure (it happened: the
+    # 5-minute wait in alerts.tf never landed). Without a connection the fetch fails, and then this check is skipped.
+    if git("fetch", "origin", "main") is not None and git("merge-base", "--is-ancestor", "origin/main", "HEAD") is None:
+        stop("This folder is missing commits that are already on main on GitHub; a merge there does not come here by itself.\n"
+             "   💡 Get them first:\n"
+             "      git switch main\n"
+             "      git pull\n"
+             "   Then again: python scripts/deployment.py azure", icon="🔄")
+
     # Chicken and egg: Terraform needs somewhere for its state before it makes anything; a script sets that storage up once.
     if (REPO / "backend.conf").exists():
         print("🗄️  Storage for the Terraform state: already there (backend.conf)")
