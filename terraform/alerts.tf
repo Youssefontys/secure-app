@@ -71,10 +71,12 @@ locals {
     # ProbeFailed (the readiness probe, before Gunicorn is up) and a successful one-shot job container both
     # Warning, in about half of all cold starts (measured over 43 events, two days, 17-11-2026 and 18-11-2026);
     # neither is a problem. What is left after excluding both is a real, unplanned one, such as the platform's own
-    # "RevisionFailure" seen once in that same measurement.
+    # "RevisionFailure" seen once in that same measurement. ScaledObjectDeleted is excluded too: KEDA logs it as a
+    # Warning when it stops watching the old revision, about a minute after any new one starts (both times on
+    # 19-11-2026, 13:19 and 18:57), so every deploy that changes the image would otherwise mail as a restart.
     restart = {
       description = "A replica of the container app had an unplanned problem (not a cold start warming up, not a job container exiting cleanly)."
-      query       = "ContainerAppSystemLogs_CL | where Type_s == \"Warning\" | where Reason_s != \"ProbeFailed\" | where not(Log_s has \"exit code '0'\")"
+      query       = "ContainerAppSystemLogs_CL | where Type_s == \"Warning\" | where Reason_s !in (\"ProbeFailed\", \"ScaledObjectDeleted\") | where not(Log_s has \"exit code '0'\")"
       window      = "PT15M"
       above       = 0
     }
