@@ -56,11 +56,14 @@ locals {
     }
     # AZKVAuditLogs, the resource-specific table from the diagnostic settings in keyvault.tf: a SecretGet by
     # anyone other than the app's own identity (the vault) or the schema job's identity (the owner's vault).
-    # Identity is a JSON string, not a flat field (checked against a real VaultGet row on 18-11-2026, after the
-    # first apply); the object id sits under claim."http://schemas.microsoft.com/identity/claims/objectidentifier".
+    # Identity is a JSON string, not a flat field. The object id sits in one of two places depending on the kind
+    # of token: an interactive admin sign-in (checked against a real VaultGet row on 18-11-2026) puts it under the
+    # long claim."http://schemas.microsoft.com/identity/claims/objectidentifier"; a managed identity (checked
+    # against 12 real SecretGet rows of the app's own identity on 19-11-2026, after forcing a new revision) puts
+    # it under the short claim.oid instead, and never has the long one. coalesce() tries both.
     keyvault-read = {
       description = "A Key Vault secret was read by something other than the app's own identity (MC-22, MC-28)."
-      query       = "AZKVAuditLogs | where OperationName == \"SecretGet\" | extend caller = tostring(parse_json(Identity).claim[\"http://schemas.microsoft.com/identity/claims/objectidentifier\"]) | where caller !in (\"${azurerm_user_assigned_identity.app.principal_id}\", \"${azurerm_user_assigned_identity.schema.principal_id}\")"
+      query       = "AZKVAuditLogs | where OperationName == \"SecretGet\" | extend caller = tostring(coalesce(parse_json(Identity).claim.oid, parse_json(Identity).claim[\"http://schemas.microsoft.com/identity/claims/objectidentifier\"])) | where caller !in (\"${azurerm_user_assigned_identity.app.principal_id}\", \"${azurerm_user_assigned_identity.schema.principal_id}\")"
       window      = "PT15M"
       above       = 0
     }
