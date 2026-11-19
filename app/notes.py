@@ -44,15 +44,15 @@ def index():
 def read_note_form():
     title = request.form.get("title", "").strip()
     body = request.form.get("body", "").strip()
-    error = None
+    error = field = None
     if not title or not body:
-        error = "Enter a title and a note."
+        error, field = "Enter a title and a note.", "title" if not title else "body"
     elif len(title) > TITLE_MAX:
-        error = f"The title can be at most {TITLE_MAX} characters."
+        error, field = f"The title can be at most {TITLE_MAX} characters.", "title"
     elif len(body) > BODY_MAX:
-        error = f"The note can be at most {BODY_MAX} characters."
+        error, field = f"The note can be at most {BODY_MAX} characters.", "body"
     if error:
-        events.event("input_malformed", field="title" if (not title or len(title) > TITLE_MAX) else "body")
+        events.event("input_malformed", field=field)
     return title, body, error
 
 
