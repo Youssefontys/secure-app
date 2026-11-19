@@ -21,10 +21,13 @@ for stream in (sys.stdout, sys.stderr):
 
 # backend.conf goes into the root folder of the repo, where deployment.py and terraform init look for it.
 BACKEND_CONF = Path(__file__).resolve().parent.parent / "backend.conf"
-# West Europe takes no new tenants (RequestDisallowedByAzure); the same region as terraform/variables.tf.
-DEFAULT_LOCATION = "francecentral"
-# Struck through in the question; whoever already has resources there may still type it in.
-CLOSED_LOCATION = "westeurope"
+# The same region as terraform/variables.tf; see plan.md section 11 for why not France Central since 19-11-2026.
+DEFAULT_LOCATION = "northeurope"
+# Struck through in the question; whoever already has resources there may still type one of these in.
+# France Central: Azure now refuses the Burstable PostgreSQL SKU there (region by region, not only there).
+# West Europe: takes no new tenants (RequestDisallowedByAzure). Germany West Central: this subscription may not
+# create PostgreSQL there. Belgium Central: no Log Analytics scheduled-query alert there.
+CLOSED_LOCATIONS = ("francecentral", "westeurope", "germanywestcentral", "belgiumcentral")
 DEFAULT_RG_NAME = "rg-tfstate-mgmt"
 PROPAGATION_WAIT = 120
 # Allowlist for a subscription ID: a GUID, nothing else.
@@ -127,8 +130,8 @@ for namespace in ("Microsoft.Storage", "Microsoft.KeyVault", "Microsoft.ManagedI
 print("\n📝 A few choices; the default is fine:")
 rg = ask_user("Resource Group name", DEFAULT_RG_NAME, pattern=r"[A-Za-z0-9_.-]{0,89}[A-Za-z0-9_-]")
 # Strike through with a combining stroke per letter: works in every terminal that shows UTF-8, without colour codes.
-closed = "".join(char + "̶" for char in CLOSED_LOCATION)
-location = ask_user("Region", DEFAULT_LOCATION, pattern=r"[a-z0-9]+", shown=f"{DEFAULT_LOCATION} | {closed} takes no new customers")
+closed = " | ".join("".join(char + "̶" for char in loc) for loc in CLOSED_LOCATIONS)
+location = ask_user("Region", DEFAULT_LOCATION, pattern=r"[a-z0-9]+", shown=f"{DEFAULT_LOCATION} | {closed}")
 container = ask_user("Blob container name", "tfstate", pattern=r"[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]")
 prefix = ask_user("Storage prefix (3-10 chars)", "tfstate", pattern=r"[a-z0-9]{3,10}")
 sa_name = f"{prefix}{random.randint(1000, 9999)}"
