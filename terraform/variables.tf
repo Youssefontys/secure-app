@@ -71,7 +71,7 @@ variable "github_oidc_prefix" {
 
   validation {
     condition     = can(regex("^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+$", var.github_oidc_prefix))
-    error_message = "Give the start of the subject, such as repo:Youssefontys/secure-application."
+    error_message = "Give the start of the subject, such as repo:Youssefontys/secure-app."
   }
 }
 
