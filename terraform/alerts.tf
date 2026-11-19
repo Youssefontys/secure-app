@@ -127,7 +127,10 @@ resource "azurerm_role_assignment" "alert_reader" {
 # things, not when the assignment's own "Succeeded" event has actually travelled through Azure's activity-log
 # stream relative to when the alert starts evaluating. On a from-scratch deploy, with ~11 assignments landing
 # within a couple of seconds of each other, the alert caught a chunk of its own first batch (11 mails,
-# 19-11-2026). A real wait fixes the race a depends_on on the resources themselves cannot.
+# 19-11-2026). A real wait fixes the race a depends_on on the resources themselves cannot. 5 minutes, not the
+# first 15 tried: the burst itself was over within 2 seconds, and plan.md section 11 explains why this number
+# is still a safety margin, not a measured one, and why a smaller blind spot (self-assigning a role right in
+# this window goes unnoticed) was accepted rather than built away with Alert Processing Rules.
 resource "time_sleep" "role_assignments_settled" {
   depends_on = [
     azurerm_role_assignment.alert_reader,
@@ -136,7 +139,7 @@ resource "time_sleep" "role_assignments_settled" {
     azurerm_role_assignment.kv_operator,
     azurerm_role_assignment.schema_secrets,
   ]
-  create_duration = "15m"
+  create_duration = "5m"
 }
 
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
