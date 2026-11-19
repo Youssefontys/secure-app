@@ -151,3 +151,28 @@ resource "azurerm_monitor_activity_log_alert" "roles" {
     action_group_id = azurerm_monitor_action_group.security.id
   }
 }
+
+# A mail per 25% of a small monthly budget (#21): not a security event, but a run-away cost (a mistake in Terraform,
+# or someone else using the subscription) should not go unnoticed either. 20 euros in steps of 5, actual spend, not
+# forecasted. The start date is fixed at the first of the month this was set up; cost data itself lags about a day,
+# so the thresholds are a configuration decision here, not something this deployment can prove by forcing it.
+resource "azurerm_consumption_budget_resource_group" "main" {
+  name              = "budget-${local.name}"
+  resource_group_id = azurerm_resource_group.main.id
+
+  amount     = 20
+  time_grain = "Monthly"
+
+  time_period {
+    start_date = "2026-11-01T00:00:00Z"
+  }
+
+  dynamic "notification" {
+    for_each = [25, 50, 75, 100]
+    content {
+      threshold      = notification.value
+      operator       = "GreaterThanOrEqualTo"
+      contact_groups = [azurerm_monitor_action_group.security.id]
+    }
+  }
+}
