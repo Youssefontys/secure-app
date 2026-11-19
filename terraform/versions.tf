@@ -18,6 +18,11 @@ terraform {
       source  = "Azure/azapi"
       version = "2.13.0"
     }
+    # A real wait where depends_on alone cannot express one: the role alert in alerts.tf.
+    time = {
+      source  = "hashicorp/time"
+      version = "0.14.2"
+    }
   }
 
   # The state is in the storage of scripts/setup_azure.py, encrypted with an own key in Key Vault.
