@@ -13,7 +13,7 @@ import auth
 import csrf
 import notes
 import passwords
-from db import TIMEZONE, close_connection
+from db import TIMEZONE
 
 
 # Configuration is input too: only a known value, otherwise the app does not start (MIT-23).
@@ -48,7 +48,6 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 app.before_request(csrf.check)
 for blueprint in (auth.bp, account.bp, notes.bp):
     app.register_blueprint(blueprint)
-app.teardown_appcontext(close_connection)
 app.jinja_env.globals.update(
     TITLE_MAX=notes.TITLE_MAX, BODY_MAX=notes.BODY_MAX, NOTES_MAX=notes.NOTES_MAX,
     PASSWORD_MIN=passwords.PASSWORD_MIN, PASSWORD_MAX=passwords.PASSWORD_MAX, csrf_token=csrf.token,
@@ -80,6 +79,9 @@ def security_headers(response):
         response.headers["Cache-Control"] = "no-store"
     if app.config["SESSION_COOKIE_SECURE"]:
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
+    # Gunicorn only adds its own Server header when the app did not already set one (MC-10): measured without
+    # this line, every response said "gunicorn", telling an attacker which tooling to aim.
+    response.headers["Server"] = ""
     return response
 
 
