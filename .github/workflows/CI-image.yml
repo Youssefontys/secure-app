@@ -20,6 +20,7 @@ env:
   # Pinned on version and digest (MIT-03); Dependabot does not see an image in a run line, so you update it yourself.
   TRIVY: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
   HADOLINT: hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+  ZIZMOR: ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
 
 jobs:
   # On a pull request, only with read rights: on a pull request from a fork GitHub gives no more anyway.
@@ -41,6 +42,15 @@ jobs:
       - &lint
         name: Lint the Dockerfile
         run: docker run --rm -i "$HADOLINT" < app/Dockerfile
+
+      # The workflows themselves, next to CodeQL's own "actions" analysis: an unpinned action, a dangerous trigger or a
+      # template-injection risk is caught here, not after it already reached main. The run's own token (MIT-34, no extra
+      # permission) puts it online, so it also checks a pinned commit against the tag it claims to be.
+      - &zizmor
+        name: Lint the workflows (zizmor)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker run --rm -v "$PWD:/scan" -w /scan -e GH_TOKEN "$ZIZMOR" .
 
       # ghcr.io wants lower case; the label links the package to this repo.
       - &build
@@ -128,6 +138,7 @@ jobs:
     steps:
       - *checkout
       - *lint
+      - *zizmor
 
       # The tag app-<tree> never moves: if the image of this app/ is on ghcr.io already, that one is pulled, scanned again
       # with the vulnerabilities of today and given the tag of this commit, instead of a new build under the same tag.
