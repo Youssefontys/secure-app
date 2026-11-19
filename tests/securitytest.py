@@ -83,9 +83,10 @@ def registration_counter():
     return register_key
 
 
-def req(c, path, data=None, csrf=True, consent=True):
+def req(c, path, data=None, csrf=True, consent=True, headers=None):
     """(status, body, headers) of a GET, or of a POST if there is data; a POST gets the CSRF token, as in a form, and a
-    registration the ticked box of the privacy statement (MIT-48), unless consent is False."""
+    registration the ticked box of the privacy statement (MIT-48), unless consent is False. Extra request headers
+    (such as Sec-Fetch-Site or Origin) go in headers, for what a browser adds that a plain POST here does not."""
     if path == "/register" and data is not None and consent and "consent" not in data:
         data = {**data, "consent": "yes"}
     if path == "/register" and data is not None and not count_registrations:
@@ -97,8 +98,9 @@ def req(c, path, data=None, csrf=True, consent=True):
             except urllib.error.HTTPError:
                 pass
         data = {**data, "csrf_token": csrf_of(c) or ""}
+    body = urllib.parse.urlencode(data).encode() if data is not None else None
     try:
-        r = c.open(B + path, urllib.parse.urlencode(data).encode() if data is not None else None)
+        r = c.open(urllib.request.Request(B + path, data=body, headers=headers or {}))
         return r.status, r.read().decode(), r.headers
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode(errors="replace"), e.headers
