@@ -8,7 +8,9 @@ resource "azurerm_log_analytics_workspace" "main" {
   # The IP address and username are personal data (A-11): 30 days and then really gone, not a day later.
   retention_in_days                       = 30
   immediate_data_purge_on_30_days_enabled = true
-  # A brake on the cost, not a filter: at 0.1 GB in a day, collecting stops until the next day.
-  daily_quota_gb = 0.1
+  # A brake on the cost, not a filter: collecting stops until the next day once this is hit, with nothing
+  # telling you it happened. 0.1 was fine day to day, but the hacking week is exactly the time both the real
+  # log volume and the value of not going blind are highest; 1 GB leaves ten times the room for a few euros.
+  daily_quota_gb = 1
   tags           = local.tags
 }
