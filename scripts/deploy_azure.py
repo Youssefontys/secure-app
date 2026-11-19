@@ -23,6 +23,17 @@ AZ_LOGIN_HELP = """First sign in to Azure: you are not signed in yet, or no subs
 EMAIL = r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}"
 EMAILS = rf"-|{EMAIL}(,{EMAIL})*"  # none (-), or addresses separated by commas
 
+# Short codes for every EU region compared against this app's requirements (PostgreSQL allowed, the Log Analytics
+# alert available, no tenant block on this subscription) in the research report. fc is the one that has worked;
+# the others are here for when it doesn't, not because they are equally good choices.
+REGIONS = {
+    "fc": "francecentral",
+    "ne": "northeurope",
+    "euw": "westeurope",       # No new tenants on this subscription (RequestDisallowedByAzure).
+    "gwc": "germanywestcentral",  # PostgreSQL itself is restricted here for this subscription.
+    "bc": "belgiumcentral",    # The Log Analytics scheduled-query alert (every mail in alerts.tf) is not sold here.
+}
+
 
 # Is the image there, and may everyone pull it? It must: Container Apps does not sign in to ghcr.io.
 # Returns its digest (sha256:...), or None: the app is deployed by digest, so what runs cannot change under a tag.
@@ -113,6 +124,13 @@ def run():
     print(f"   ✅ Ready, and Container Apps may pull it: {digest}")
 
     hack = hackmode() if deployment.INTERACTIVE else {"THROTTLE_IP_MODE": None, "THROTTLE_PAIR_EXEMPT_USERS": None}
+    # Almost every resource takes its location from the resource group, so away from what is already deployed
+    # replaces nearly all of it; the plan below shows that before you type yes.
+    region = REGIONS["fc"]
+    if deployment.INTERACTIVE:
+        print("\n🌍 Region: fc France Central, ne North Europe, euw West Europe (no new tenants on this subscription),")
+        print("   gwc Germany West Central (PostgreSQL restricted here), bc Belgium Central (no Log Analytics alert here)")
+        region = REGIONS[ask("Which region?", "fc", "|".join(REGIONS))]
     # The mail on a lockout (alerts.tf): by default the address you signed in to az with. Not in the repo, which is public.
     email = login if re.fullmatch(EMAIL, login) else ""
     # The Blue Teamers get the same mail (UC-11). A new run offers the same ones again, so they are not dropped.
@@ -139,7 +157,8 @@ def run():
     # Exactly as the token of a job names the repo; with immutable subjects that includes the IDs of owner and repo.
     oidc = gh("api", f"repos/{github}/actions/oidc/customization/sub", "--jq", ".sub_claim_prefix // empty") or f"repo:{github}"
     variables = [f"app_image={image}", f"alert_email={email}", f"github_oidc_prefix={oidc}",
-                 f"deploy_from_github={'true' if from_github else 'false'}", f"blue_team_emails={json.dumps(blue)}"]
+                 f"deploy_from_github={'true' if from_github else 'false'}", f"blue_team_emails={json.dumps(blue)}",
+                 f"location={region}"]
     if hack["THROTTLE_IP_MODE"]:
         variables += ["throttle_ip_mode=hackweek", "min_replicas=1"]
     if hack["THROTTLE_PAIR_EXEMPT_USERS"]:
