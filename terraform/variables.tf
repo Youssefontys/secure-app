@@ -1,9 +1,10 @@
 # West Europe takes no new tenants, in Germany West Central this subscription may not create PostgreSQL, and
-# Belgium Central has no log search alert. France Central is the cheapest and is in the EU (Week 8);
-# database.tf already checks the region at the plan.
+# Belgium Central has no log search alert. France Central was the cheapest and in the EU (Week 8), but since
+# 19-11-2026 it refuses the Burstable PostgreSQL SKU too: Azure is retiring that VM generation (Burstable v1),
+# region by region, not only there (plan.md, section 11). North Europe passed every check France Central once did.
 variable "location" {
   type    = string
-  default = "francecentral"
+  default = "northeurope"
 }
 
 # The image of the app by digest (ghcr.io/owner/repo@sha256:...), never latest (MIT-03); the pipeline builds and pushes it,
@@ -70,7 +71,7 @@ variable "github_oidc_prefix" {
 
   validation {
     condition     = can(regex("^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+$", var.github_oidc_prefix))
-    error_message = "Give the start of the subject, such as repo:Youssefontys/secure-application."
+    error_message = "Give the start of the subject, such as repo:Youssefontys/secure-app."
   }
 }
 
