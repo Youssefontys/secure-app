@@ -97,6 +97,13 @@ def run():
     subscription, login = (account.stdout.splitlines() + ["", ""])[:2]
     print(f"\n☁️  Signed in to Azure, subscription: {subscription}")
 
+    # A merge on GitHub does not pull itself in here: this folder deploys exactly what is checked out, app/ and
+    # terraform/ both. Without this, an older local checkout silently re-applies whatever it still has, undoing
+    # a merged fix (it happened: terraform/alerts.tf went back to 15m after PR #50 had already set it to 5m).
+    if git("fetch", "origin", "main") is not None and git("merge-base", "--is-ancestor", "origin/main", "HEAD") is None:
+        stop("Deze map mist commits die al op GitHub main staan.\n"
+             "   💡 git checkout main && git pull, dan dit opnieuw.", icon="🔄")
+
     # Chicken and egg: Terraform needs somewhere for its state before it makes anything; a script sets that storage up once.
     if (REPO / "backend.conf").exists():
         print("🗄️  Storage for the Terraform state: already there (backend.conf)")
