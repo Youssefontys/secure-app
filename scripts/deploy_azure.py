@@ -71,8 +71,9 @@ def state_region():
 # Opens the window of the rule that holds back the mails a deploy causes itself, from now on for MUTE_MINUTES. Before
 # the first apply the rule does not exist yet, and Terraform gives it a first window itself. A failure only costs a
 # mail about your own deploy, so it warns instead of stopping. Returns the rule's id, so the second opening does not
-# ask Terraform again: every terraform output fetches the state from Azure, about half a minute.
-def mute_own_alerts(rule_id=""):
+# ask Terraform again: every terraform output fetches the state from Azure, about half a minute. Only the opening after
+# Terraform says so: that is the window that counts.
+def mute_own_alerts(rule_id="", announce=True):
     rule_id = rule_id or output("deploy_mute_rule_id")
     if not rule_id:
         return ""
@@ -92,28 +93,12 @@ def mute_own_alerts(rule_id=""):
             put = subprocess.run([az, "rest", "--method", "put", "--url", url, "--body", f"@{body}"],
                                  capture_output=True, text=True)
         if put.returncode == 0:
-            print(f"🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
-                  f"{until.astimezone():%H:%M}")
+            if announce:
+                print(f"\n🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
+                      f"{until.astimezone():%H:%M}")
             return rule_id
     print("⚠️  Could not hold back the mails about this deploy itself; a mail from the Key Vault alert may follow.")
     return rule_id
-
-
-# The outputs at the end, in the order of outputs.tf: what you use yourself, a blank line, then what only this script
-# uses. One call for all of them: every terraform output fetches the state from Azure again. The Blue Teamers only as
-# a count: personal data, which is why Terraform marks the output sensitive too.
-def summary(blue):
-    result = subprocess.run([shutil.which("terraform"), "-chdir=terraform", "output", "-json"],
-                            cwd=REPO, capture_output=True, text=True)
-    values = {name: item["value"] for name, item in json.loads(result.stdout).items()} if result.returncode == 0 else {}
-    lines = [("app_url", values.get("app_url")),
-             ("blue_team_emails", f"{len(blue)} address(es), not shown: personal data" if blue else "none"),
-             ("security_log_command", values.get("security_log_command")),
-             None,
-             ("deploy_client_id", values.get("deploy_client_id") or "none: deploying from GitHub is off"),
-             ("deploy_mute_rule_id", values.get("deploy_mute_rule_id"))]
-    for line in lines:
-        print(f"   {line[0]:<20} = {line[1]}" if line else "")
 
 
 # The environment azure in GitHub (MIT-44): only main may deploy, and only after your approval. The three IDs as
@@ -227,16 +212,17 @@ def run():
 
     # Before Terraform, because its plan already reads the Key Vault secrets while you decide on yes; and again after
     # it, so a slow yes or a long apply still has the full window behind it.
-    rule_id = mute_own_alerts()
+    rule_id = mute_own_alerts(announce=False)
+    print()
     # The question for yes stays: this turns on resources that cost money.
     if not terraform("apply", *(f"-var={v}" for v in variables)):
         stop("terraform apply did not work, or you did not type yes; the message is above.")
     mute_own_alerts(rule_id)
+    url = output("app_url")
     if from_github and signed_in:
         setup_github(github)
-    print("\n🎉 Done!\n")
-    summary(blue)
-    print("\n⏳ Terraform has started the schema job; if logging in gives an error in the first minute, try again shortly.")
+    print(f"\n🎉 Done! The app is on {url}")
+    print("⏳ Terraform has started the schema job; if logging in gives an error in the first minute, try again shortly.")
     print("💡 Updating: merge a pull request to main, and approve the deployment in the Actions tab; without GitHub set up,\n"
           "   wait until the Action Image is green and run this script again.")
     print("💡 Everything gone again, so it costs nothing: python scripts/deployment.py undo\n")
