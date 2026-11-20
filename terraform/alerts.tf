@@ -22,8 +22,11 @@ resource "azurerm_monitor_action_group" "security" {
   }
 }
 
-# What gets a mail, each a query on the log of the app in Log Analytics: what it means, the query, over how long, and
-# from how many lines. A new alert is one line here. The first one is the lockout of MIT-37; the others are for what a
+# What gets a mail, each a query on the log of the app in Log Analytics: what it means, the query, over how long, from
+# how many lines, and how long it stays quiet after a mail. A new alert is one line here.
+# Quiet for an hour so one attack does not mail every 5 minutes, except where a deploy itself fires the alert (your own
+# Key Vault reads, a new revision): there an hour would also hide a real read or restart in the hour after every
+# deploy. 15 minutes is the window itself, so the same lines still never mail twice. The first one is the lockout of MIT-37; the others are for what a
 # lockout does not show (MC-28): a value that does not decrypt, an error someone provokes, and failed logins spread
 # over more addresses or names than one counter sees.
 locals {
@@ -34,18 +37,21 @@ locals {
       query       = "${local.log} \"lockout_started\""
       window      = "PT5M"
       above       = 0
+      quiet       = "PT1H"
     }
     unreadable = {
       description = "A stored value did not decrypt: changed or moved in the database, or another key (note_unreadable, MC-08, MC-23)."
       query       = "${local.log} \"note_unreadable\""
       window      = "PT5M"
       above       = 0
+      quiet       = "PT1H"
     }
     error = {
       description = "The app logged an unexpected error (MIT-25, MC-26)."
       query       = "${local.log} \"Unexpected error\""
       window      = "PT5M"
       above       = 0
+      quiet       = "PT1H"
     }
     # More than one address can do before it is locked (20, in hackmode 100): so several addresses, or many names.
     failed-logins = {
@@ -53,6 +59,7 @@ locals {
       query       = "${local.log} \"login_failed\""
       window      = "PT15M"
       above       = var.throttle_ip_mode == "hackweek" ? 120 : 25
+      quiet       = "PT1H"
     }
     # AZKVAuditLogs, the resource-specific table from the diagnostic settings in keyvault.tf: a SecretGet by
     # anyone other than the app's own identity (the vault) or the schema job's identity (the owner's vault).
@@ -66,17 +73,21 @@ locals {
       query       = "AZKVAuditLogs | where OperationName == \"SecretGet\" | extend caller = tostring(coalesce(parse_json(Identity).claim.oid, parse_json(Identity).claim[\"http://schemas.microsoft.com/identity/claims/objectidentifier\"])) | where caller !in (\"${azurerm_user_assigned_identity.app.principal_id}\", \"${azurerm_user_assigned_identity.schema.principal_id}\")"
       window      = "PT15M"
       above       = 0
+      quiet       = "PT15M"
     }
     # Container Apps puts its own events in a second table, ContainerAppSystemLogs_CL: a cold start alone makes
     # ProbeFailed (the readiness probe, before Gunicorn is up) and a successful one-shot job container both
     # Warning, in about half of all cold starts (measured over 43 events, two days, 17-11-2026 and 18-11-2026);
     # neither is a problem. What is left after excluding both is a real, unplanned one, such as the platform's own
-    # "RevisionFailure" seen once in that same measurement.
+    # "RevisionFailure" seen once in that same measurement. ScaledObjectDeleted is excluded too: KEDA logs it as a
+    # Warning when it stops watching the old revision, about a minute after any new one starts (both times on
+    # 19-11-2026, 13:19 and 18:57), so every deploy that changes the image would otherwise mail as a restart.
     restart = {
       description = "A replica of the container app had an unplanned problem (not a cold start warming up, not a job container exiting cleanly)."
-      query       = "ContainerAppSystemLogs_CL | where Type_s == \"Warning\" | where Reason_s != \"ProbeFailed\" | where not(Log_s has \"exit code '0'\")"
+      query       = "ContainerAppSystemLogs_CL | where Type_s == \"Warning\" | where Reason_s !in (\"ProbeFailed\", \"ScaledObjectDeleted\") | where not(Log_s has \"exit code '0'\")"
       window      = "PT15M"
       above       = 0
+      quiet       = "PT15M"
     }
   }
 }
@@ -92,8 +103,8 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "security" {
   severity             = 2
   evaluation_frequency = "PT5M"
   window_duration      = each.value.window
-  # Do not mail again every 5 minutes during one attack.
-  mute_actions_after_alert_duration = "PT1H"
+  # Per alert: quiet in the locals above.
+  mute_actions_after_alert_duration = each.value.quiet
   # In a new workspace the table only exists after the first log line; otherwise Azure refuses the rule at creation.
   skip_query_validation = true
   tags                  = local.tags
@@ -123,30 +134,55 @@ resource "azurerm_role_assignment" "alert_reader" {
   principal_id         = each.value.identity[0].principal_id
 }
 
-# Creating this alert right after the role assignments is not enough: that only orders when Terraform creates
-# things, not when the assignment's own "Succeeded" event has actually travelled through Azure's activity-log
-# stream relative to when the alert starts evaluating. On a from-scratch deploy, with ~11 assignments landing
-# within a couple of seconds of each other, the alert caught a chunk of its own first batch (11 mails,
-# 19-11-2026). A real wait fixes the race a depends_on on the resources themselves cannot. 5 minutes, not the
-# first 15 tried: the burst itself was over within 2 seconds, and plan.md section 11 explains why this number
-# is still a safety margin, not a measured one, and why a smaller blind spot (self-assigning a role right in
-# this window goes unnoticed) was accepted rather than built away with Alert Processing Rules.
-resource "time_sleep" "role_assignments_settled" {
-  depends_on = [
-    azurerm_role_assignment.alert_reader,
-    azurerm_role_assignment.app_secrets,
-    azurerm_role_assignment.deploy,
-    azurerm_role_assignment.kv_operator,
-    azurerm_role_assignment.schema_secrets,
-  ]
-  create_duration = "5m"
+# A deploy fires three alerts itself: Terraform reads the Key Vault secrets with the administrator's sign-in, a new
+# revision restarts the app, and a from-scratch build assigns ~11 roles at once (the role alert caught a chunk of its
+# own first batch on 19-11-2026, 11 mails, because an assignment's event arrives later than Terraform finishes it).
+# This rule holds back only those three mails, and only in a window: deploy_azure.py opens one before Terraform and
+# again after it (30 minutes), and a new rule starts with an hour for the from-scratch build that creates it. The
+# alerts still fire and stay visible in Azure, marked as suppressed; lockouts, failed logins, errors, unreadable values
+# and the budget keep mailing during a deploy. The window closes by itself, also when the script stops halfway.
+# The subscription as scope, like the role alert: not every role a deploy assigns sits inside this resource group.
+resource "azurerm_monitor_alert_processing_rule_suppression" "deploy" {
+  name                = "apr-${local.name}-deploy"
+  resource_group_name = azurerm_resource_group.main.name
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Holds back the mails a deploy causes itself, in the window deploy_azure.py opens."
+  tags                = local.tags
+
+  # Names, not references: the role alert has to wait for this rule, so this rule cannot refer to it.
+  condition {
+    alert_rule_name {
+      operator = "Equals"
+      values   = ["alert-${local.name}-keyvault-read", "alert-${local.name}-restart", "alert-${local.name}-roles"]
+    }
+  }
+
+  schedule {
+    effective_from  = formatdate("YYYY-MM-DD'T'hh:mm:ss", timestamp())
+    effective_until = formatdate("YYYY-MM-DD'T'hh:mm:ss", timeadd(timestamp(), "1h"))
+    time_zone       = "UTC"
+  }
+
+  # After creation deploy_azure.py owns the window; otherwise every plan would move it.
+  lifecycle {
+    ignore_changes = [schedule]
+  }
+}
+
+# The fixed wait this rule replaces only lived in the state, never in Azure: forget it, nothing to destroy.
+removed {
+  from = time_sleep.role_assignments_settled
+  lifecycle {
+    destroy = false
+  }
 }
 
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
 # any role, and this is where that shows. From the activity log of Azure, not from the log of the app, and free.
 # Only Succeeded: Azure logs every assignment twice, Started and Succeeded, and an activity log alert mails on every
-# event. Only created once the wait above is over, so the first apply does not mail its own; a later
-# apply that assigns a role does, and that mail is your own.
+# event. And only after the role assignments of Terraform itself and the rule above: the order alone did not keep the
+# first apply from mailing its own (11 mails, 19-11-2026), the rule's first window does. A role assigned by hand,
+# outside a deploy, mails.
 resource "azurerm_monitor_activity_log_alert" "roles" {
   name                = "alert-${local.name}-roles"
   resource_group_name = azurerm_resource_group.main.name
@@ -155,7 +191,14 @@ resource "azurerm_monitor_activity_log_alert" "roles" {
   description         = "A role was assigned in the subscription (MC-31)."
   tags                = local.tags
 
-  depends_on = [time_sleep.role_assignments_settled]
+  depends_on = [
+    azurerm_monitor_alert_processing_rule_suppression.deploy,
+    azurerm_role_assignment.alert_reader,
+    azurerm_role_assignment.app_secrets,
+    azurerm_role_assignment.deploy,
+    azurerm_role_assignment.kv_operator,
+    azurerm_role_assignment.schema_secrets,
+  ]
 
   criteria {
     category       = "Administrative"

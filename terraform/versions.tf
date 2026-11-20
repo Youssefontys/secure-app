@@ -18,7 +18,8 @@ terraform {
       source  = "Azure/azapi"
       version = "2.13.0"
     }
-    # A real wait where depends_on alone cannot express one: the role alert in alerts.tf.
+    # No longer used, but the state still holds a time_sleep that the removed block in alerts.tf forgets, and
+    # Terraform needs the provider for that once. Goes after the next deploy.
     time = {
       source  = "hashicorp/time"
       version = "0.14.2"
@@ -34,7 +35,7 @@ terraform {
 provider "azurerm" {
   # Not registered by default on a new subscription; the schema does not say which ones azurerm registers itself.
   # Exactly as Azure returns them: azurerm compares case, and Azure calls this one microsoft.insights.
-  resource_providers_to_register = ["Microsoft.App", "Microsoft.DBforPostgreSQL", "microsoft.insights", "Microsoft.OperationalInsights"]
+  resource_providers_to_register = ["Microsoft.AlertsManagement", "Microsoft.App", "Microsoft.DBforPostgreSQL", "microsoft.insights", "Microsoft.OperationalInsights"]
 
   features {
     key_vault {
