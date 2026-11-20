@@ -18,12 +18,6 @@ terraform {
       source  = "Azure/azapi"
       version = "2.13.0"
     }
-    # No longer used, but the state still holds a time_sleep that the removed block in alerts.tf forgets, and
-    # Terraform needs the provider for that once. Goes after the next deploy.
-    time = {
-      source  = "hashicorp/time"
-      version = "0.14.2"
-    }
   }
 
   # The state is in the storage of scripts/setup_azure.py, encrypted with an own key in Key Vault.

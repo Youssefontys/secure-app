@@ -169,14 +169,6 @@ resource "azurerm_monitor_alert_processing_rule_suppression" "deploy" {
   }
 }
 
-# The fixed wait this rule replaces only lived in the state, never in Azure: forget it, nothing to destroy.
-removed {
-  from = time_sleep.role_assignments_settled
-  lifecycle {
-    destroy = false
-  }
-}
-
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
 # any role, and this is where that shows. From the activity log of Azure, not from the log of the app, and free.
 # Only Succeeded: Azure logs every assignment twice, Started and Succeeded, and an activity log alert mails on every
