@@ -71,8 +71,9 @@ def state_region():
 # Opens the window of the rule that holds back the mails a deploy causes itself, from now on for MUTE_MINUTES. Before
 # the first apply the rule does not exist yet, and Terraform gives it a first window itself. A failure only costs a
 # mail about your own deploy, so it warns instead of stopping. Returns the rule's id, so the second opening does not
-# ask Terraform again: every terraform output fetches the state from Azure, about half a minute.
-def mute_own_alerts(rule_id=""):
+# ask Terraform again: every terraform output fetches the state from Azure, about half a minute. Only the opening after
+# Terraform says so: that is the window that counts.
+def mute_own_alerts(rule_id="", announce=True):
     rule_id = rule_id or output("deploy_mute_rule_id")
     if not rule_id:
         return ""
@@ -92,8 +93,9 @@ def mute_own_alerts(rule_id=""):
             put = subprocess.run([az, "rest", "--method", "put", "--url", url, "--body", f"@{body}"],
                                  capture_output=True, text=True)
         if put.returncode == 0:
-            print(f"🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
-                  f"{until.astimezone():%H:%M}")
+            if announce:
+                print(f"\n🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
+                      f"{until.astimezone():%H:%M}")
             return rule_id
     print("⚠️  Could not hold back the mails about this deploy itself; a mail from the Key Vault alert may follow.")
     return rule_id
@@ -210,7 +212,8 @@ def run():
 
     # Before Terraform, because its plan already reads the Key Vault secrets while you decide on yes; and again after
     # it, so a slow yes or a long apply still has the full window behind it.
-    rule_id = mute_own_alerts()
+    rule_id = mute_own_alerts(announce=False)
+    print()
     # The question for yes stays: this turns on resources that cost money.
     if not terraform("apply", *(f"-var={v}" for v in variables)):
         stop("terraform apply did not work, or you did not type yes; the message is above.")
