@@ -12,7 +12,7 @@ owner saying so, as `SECURITY.md` asks.
 ## The task: get the flag
 
 There is one flag, in the form `FLAG{...}`, in a note of one account. Notes are encrypted per owner and only shown to
-that owner. Get it, and hand it in with how you got it.
+that owner. One account has fewer restrictions than the others. Get the flag, and hand it in with how you got it.
 
 ## More challenges
 
@@ -32,8 +32,10 @@ flag.
 
 Two hints, each from a set day on. Ask me for one; using a hint is fine, just say so when you hand in the flag.
 
-- **Hint 1, from Tuesday 8 December:** the name of the account with the flag. It can be found without the hint.
-- **Hint 2, from Thursday 10 December:** a string. What it is, and where it fits, is up to you.
+- **Hint 1, from Tuesday 8 December:** a file name.
+- **Hint 2, from Thursday 10 December:** a string.
+
+What a hint means, and where it fits, is up to you.
 
 ## Rules
 
