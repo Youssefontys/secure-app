@@ -134,30 +134,54 @@ resource "azurerm_role_assignment" "alert_reader" {
   principal_id         = each.value.identity[0].principal_id
 }
 
-# Creating this alert right after the role assignments is not enough: that only orders when Terraform creates
-# things, not when the assignment's own "Succeeded" event has actually travelled through Azure's activity-log
-# stream relative to when the alert starts evaluating. On a from-scratch deploy, with ~11 assignments landing
-# within a couple of seconds of each other, the alert caught a chunk of its own first batch (11 mails,
-# 19-11-2026). A real wait fixes the race a depends_on on the resources themselves cannot. 5 minutes, not the
-# first 15 tried: the burst itself was over within 2 seconds, and plan.md section 11 explains why this number
-# is still a safety margin, not a measured one, and why a smaller blind spot (self-assigning a role right in
-# this window goes unnoticed) was accepted rather than built away with Alert Processing Rules.
-resource "time_sleep" "role_assignments_settled" {
-  depends_on = [
-    azurerm_role_assignment.alert_reader,
-    azurerm_role_assignment.app_secrets,
-    azurerm_role_assignment.deploy,
-    azurerm_role_assignment.kv_operator,
-    azurerm_role_assignment.schema_secrets,
-  ]
-  create_duration = "5m"
+# A deploy fires three alerts itself: Terraform reads the Key Vault secrets with the administrator's sign-in, a new
+# revision restarts the app, and a from-scratch build assigns ~11 roles at once (the role alert caught a chunk of its
+# own first batch on 19-11-2026, 11 mails, because an assignment's event arrives later than Terraform finishes it).
+# This rule holds back only those three mails, and only in a window: deploy_azure.py opens one before Terraform and
+# again after it (30 minutes), and a new rule starts with an hour for the from-scratch build that creates it. The
+# alerts still fire and stay visible in Azure, marked as suppressed; lockouts, failed logins, errors, unreadable values
+# and the budget keep mailing during a deploy. The window closes by itself, also when the script stops halfway.
+# The subscription as scope, like the role alert: not every role a deploy assigns sits inside this resource group.
+resource "azurerm_monitor_alert_processing_rule_suppression" "deploy" {
+  name                = "apr-${local.name}-deploy"
+  resource_group_name = azurerm_resource_group.main.name
+  scopes              = ["/subscriptions/${data.azurerm_client_config.current.subscription_id}"]
+  description         = "Holds back the mails a deploy causes itself, in the window deploy_azure.py opens."
+  tags                = local.tags
+
+  # Names, not references: the role alert has to wait for this rule, so this rule cannot refer to it.
+  condition {
+    alert_rule_name {
+      operator = "Equals"
+      values   = ["alert-${local.name}-keyvault-read", "alert-${local.name}-restart", "alert-${local.name}-roles"]
+    }
+  }
+
+  schedule {
+    effective_from  = formatdate("YYYY-MM-DD'T'hh:mm:ss", timestamp())
+    effective_until = formatdate("YYYY-MM-DD'T'hh:mm:ss", timeadd(timestamp(), "1h"))
+    time_zone       = "UTC"
+  }
+
+  # After creation deploy_azure.py owns the window; otherwise every plan would move it.
+  lifecycle {
+    ignore_changes = [schedule]
+  }
+}
+
+# The fixed wait this rule replaces only lived in the state, never in Azure: forget it, nothing to destroy.
+removed {
+  from = time_sleep.role_assignments_settled
+  lifecycle {
+    destroy = false
+  }
 }
 
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
 # any role, and this is where that shows. From the activity log of Azure, not from the log of the app, and free.
 # Only Succeeded: Azure logs every assignment twice, Started and Succeeded, and an activity log alert mails on every
-# event. Only created once the wait above is over, so the first apply does not mail its own; a later
-# apply that assigns a role does, and that mail is your own.
+# event. Only created after the rule above, so a from-scratch build's own assignments land in its first window; a
+# role assigned by hand, outside a deploy, mails.
 resource "azurerm_monitor_activity_log_alert" "roles" {
   name                = "alert-${local.name}-roles"
   resource_group_name = azurerm_resource_group.main.name
@@ -166,7 +190,7 @@ resource "azurerm_monitor_activity_log_alert" "roles" {
   description         = "A role was assigned in the subscription (MC-31)."
   tags                = local.tags
 
-  depends_on = [time_sleep.role_assignments_settled]
+  depends_on = [azurerm_monitor_alert_processing_rule_suppression.deploy]
 
   criteria {
     category       = "Administrative"
