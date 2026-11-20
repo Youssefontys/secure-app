@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,8 @@ EMAILS = rf"-|{EMAIL}(,{EMAIL})*"  # none (-), or addresses separated by commas
 # firing comes up to 15 minutes after the last Key Vault read: measured on 20-11-2026, reads until 00:39:29, the apply
 # done at 00:40:20, firings at 00:44, 00:49 and 00:54:31. 15 would have fit by 49 seconds; 20 is no pause Azure allows.
 MUTE_MINUTES = 30
+# The schema job (app.tf): the names follow from local.name in main.tf, which never changes.
+SCHEMA_JOB = ["--resource-group", "rg-notes", "--name", "caj-notes-schema"]
 
 
 # Is the image there, and may everyone pull it? It must: Container Apps does not sign in to ghcr.io.
@@ -99,6 +102,44 @@ def mute_own_alerts(rule_id="", announce=True):
             return rule_id
     print("⚠️  Could not hold back the mails about this deploy itself; a mail from the Key Vault alert may follow.")
     return rule_id
+
+
+# az containerapp job ... for the schema job, as text; "" if az cannot tell.
+def schema_job(*args):
+    result = subprocess.run([shutil.which("az"), "containerapp", "job", *args, *SCHEMA_JOB, "-o", "tsv"],
+                            capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+# Waits until one run of the schema job is no longer running, and returns how it ended.
+def schema_run_status(run):
+    status, until = "", time.monotonic() + 420  # the job's own deadline is 300 s (app.tf), plus starting up
+    while run and time.monotonic() < until:
+        status = schema_job("execution", "show", "--job-execution-name", run, "--query", "properties.status")
+        if status not in ("Running", "Processing"):
+            break
+        time.sleep(10)
+    return status
+
+
+# Terraform starts the schema job but does not wait for it, and without it the app cannot log in to the database: every
+# login and registration is a 500. On 20-11-2026 its container never started (the log shows the image pulled, then
+# nothing until the deadline), and started again by hand it was done in 35 s. So wait for its last run here, and if
+# that did not succeed, start it once more. A deploy that did not start it finds the earlier run, and is done at once.
+def check_schema_job():
+    print("\n🗄️  The database: the schema job, which sets the password the app logs in with")
+    run = schema_job("execution", "list", "--query", "sort_by([], &properties.startTime)[-1].name")
+    status = schema_run_status(run)
+    if run and status != "Succeeded":
+        print(f"   ⚠️  Its last run ended as {status or 'unknown'}; starting it once more")
+        run = schema_job("start", "--query", "name")
+        status = schema_run_status(run)
+    if status == "Succeeded":
+        print("   ✅ Ready")
+    else:
+        print("   ⚠️  Not seen to finish. If logging in or registering gives an error, start it by hand; if that fails\n"
+              "      too, look at the job caj-notes-schema in the portal (Execution history):\n"
+              f"      az containerapp job start {' '.join(SCHEMA_JOB)}")
 
 
 # The environment azure in GitHub (MIT-44): only main may deploy, and only after your approval. The three IDs as
@@ -218,11 +259,11 @@ def run():
     if not terraform("apply", *(f"-var={v}" for v in variables)):
         stop("terraform apply did not work, or you did not type yes; the message is above.")
     mute_own_alerts(rule_id)
+    check_schema_job()
     url = output("app_url")
     if from_github and signed_in:
         setup_github(github)
     print(f"\n🎉 Done! The app is on {url}")
-    print("⏳ Terraform has started the schema job; if logging in gives an error in the first minute, try again shortly.")
     print("💡 Updating: merge a pull request to main, and approve the deployment in the Actions tab; without GitHub set up,\n"
           "   wait until the Action Image is green and run this script again.")
     print("💡 Everything gone again, so it costs nothing: python scripts/deployment.py undo\n")
