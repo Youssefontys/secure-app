@@ -25,8 +25,10 @@ AZ_LOGIN_HELP = """First sign in to Azure: you are not signed in yet, or no subs
 # An email address, as an allowlist (MIT-22); the same rule as the validation of alert_email in terraform/variables.tf.
 EMAIL = r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}"
 EMAILS = rf"-|{EMAIL}(,{EMAIL})*"  # none (-), or addresses separated by commas
-# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy"):
-# they look back 15 minutes, and a line reaches Log Analytics a few minutes after it happens.
+# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy"): the
+# same 30 minutes as every alert's pause after a mail, so one number everywhere. They look back 15 minutes, so the last
+# firing comes up to 15 minutes after the last Key Vault read: measured on 20-11-2026, reads until 00:39:29, the apply
+# done at 00:40:20, firings at 00:44, 00:49 and 00:54:31. 15 would have fit by 49 seconds; 20 is no pause Azure allows.
 MUTE_MINUTES = 30
 
 
@@ -68,12 +70,13 @@ def state_region():
 
 # Opens the window of the rule that holds back the mails a deploy causes itself, from now on for MUTE_MINUTES. Before
 # the first apply the rule does not exist yet, and Terraform gives it a first window itself. A failure only costs a
-# mail about your own deploy, so it warns instead of stopping.
-def mute_own_alerts():
-    rule = output("deploy_mute_rule_id")
-    if not rule:
-        return
-    az, url = shutil.which("az"), f"https://management.azure.com{rule}?api-version=2021-08-08"
+# mail about your own deploy, so it warns instead of stopping. Returns the rule's id, so the second opening does not
+# ask Terraform again: every terraform output fetches the state from Azure, about half a minute.
+def mute_own_alerts(rule_id=""):
+    rule_id = rule_id or output("deploy_mute_rule_id")
+    if not rule_id:
+        return ""
+    az, url = shutil.which("az"), f"https://management.azure.com{rule_id}?api-version=2021-08-08"
     got = subprocess.run([az, "rest", "--method", "get", "--url", url], capture_output=True, text=True)
     if got.returncode == 0:
         rule = json.loads(got.stdout)
@@ -91,8 +94,26 @@ def mute_own_alerts():
         if put.returncode == 0:
             print(f"🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
                   f"{until.astimezone():%H:%M}")
-            return
+            return rule_id
     print("⚠️  Could not hold back the mails about this deploy itself; a mail from the Key Vault alert may follow.")
+    return rule_id
+
+
+# The outputs at the end, in the order of outputs.tf: what you use yourself, a blank line, then what only this script
+# uses. One call for all of them: every terraform output fetches the state from Azure again. The Blue Teamers only as
+# a count: personal data, which is why Terraform marks the output sensitive too.
+def summary(blue):
+    result = subprocess.run([shutil.which("terraform"), "-chdir=terraform", "output", "-json"],
+                            cwd=REPO, capture_output=True, text=True)
+    values = {name: item["value"] for name, item in json.loads(result.stdout).items()} if result.returncode == 0 else {}
+    lines = [("app_url", values.get("app_url")),
+             ("blue_team_emails", f"{len(blue)} address(es), not shown: personal data" if blue else "none"),
+             ("security_log_command", values.get("security_log_command")),
+             None,
+             ("deploy_client_id", values.get("deploy_client_id") or "none: deploying from GitHub is off"),
+             ("deploy_mute_rule_id", values.get("deploy_mute_rule_id"))]
+    for line in lines:
+        print(f"   {line[0]:<20} = {line[1]}" if line else "")
 
 
 # The environment azure in GitHub (MIT-44): only main may deploy, and only after your approval. The three IDs as
@@ -133,8 +154,8 @@ def run():
     print(f"\n☁️  Signed in to Azure, subscription: {subscription}")
 
     # A merge on GitHub does not reach this folder by itself, and both the image tag and Terraform use what is checked
-    # out here: deployed from an older branch, a fix that is already on main quietly stays off Azure (it happened: the
-    # 5-minute wait in alerts.tf never landed). Without a connection the fetch fails, and then this check is skipped.
+    # out here: deployed from an older branch, a fix that is already on main quietly stays off Azure (it happened once,
+    # with an alert fix on 19-11-2026). Without a connection the fetch fails, and then this check is skipped.
     if git("fetch", "origin", "main") is not None and git("merge-base", "--is-ancestor", "origin/main", "HEAD") is None:
         stop("This folder is missing commits that are already on main on GitHub; a merge there does not come here by itself.\n"
              "   💡 Get them first:\n"
@@ -206,16 +227,16 @@ def run():
 
     # Before Terraform, because its plan already reads the Key Vault secrets while you decide on yes; and again after
     # it, so a slow yes or a long apply still has the full window behind it.
-    mute_own_alerts()
+    rule_id = mute_own_alerts()
     # The question for yes stays: this turns on resources that cost money.
     if not terraform("apply", *(f"-var={v}" for v in variables)):
         stop("terraform apply did not work, or you did not type yes; the message is above.")
-    mute_own_alerts()
-    url = output("app_url")
+    mute_own_alerts(rule_id)
     if from_github and signed_in:
         setup_github(github)
-    print(f"\n🎉 Done! The app is on {url}")
-    print("⏳ Terraform has started the schema job; if logging in gives an error in the first minute, try again shortly.")
+    print("\n🎉 Done!\n")
+    summary(blue)
+    print("\n⏳ Terraform has started the schema job; if logging in gives an error in the first minute, try again shortly.")
     print("💡 Updating: merge a pull request to main, and approve the deployment in the Actions tab; without GitHub set up,\n"
           "   wait until the Action Image is green and run this script again.")
     print("💡 Everything gone again, so it costs nothing: python scripts/deployment.py undo\n")
