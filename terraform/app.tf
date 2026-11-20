@@ -155,7 +155,8 @@ resource "azurerm_container_app_job" "schema" {
   resource_group_name          = azurerm_resource_group.main.name
   container_app_environment_id = azurerm_container_app_environment.main.id
   workload_profile_name        = "Consumption"
-  replica_timeout_in_seconds   = 300
+  # The deadline is for the whole run, retries included: room for the 4 minutes of waiting below, and a retry.
+  replica_timeout_in_seconds = 600
   # Repeatable, so on a temporary error (rights not yet known everywhere) simply once more.
   replica_retry_limit = 2
   tags                = local.tags
@@ -187,14 +188,27 @@ resource "azurerm_container_app_job" "schema" {
       cpu    = 0.25
       memory = "0.5Gi"
       # One transaction: if a statement fails, nothing is left half done. sql.Literal turns the
-      # password into text, never SQL.
+      # password into text, never SQL. A new server does not always take a connection right away: on 20-11-2026 the
+      # first connection hung until the deadline, without a word, and the app could not log in. So each attempt gets
+      # 10 s, for about 4 minutes, and each step prints a line, so the console log shows how far the job got.
       command = ["python", "-c", <<-PY
-        import os, psycopg
+        import os, time, psycopg
         from psycopg import sql
-        with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+        for attempt in range(1, 17):
+            try:
+                c = psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
+                break
+            except psycopg.OperationalError as e:
+                print(f"Attempt {attempt}: {e}", flush=True)
+                time.sleep(5)
+        else:
+            raise SystemExit("The database took no connection.")
+        with c:
             if c.execute("SELECT to_regclass('public.users')").fetchone()[0] is None:
                 c.execute(os.environ["SCHEMA_SQL"])
+                print("Schema loaded.", flush=True)
             c.execute(sql.SQL("ALTER ROLE notes_app PASSWORD {}").format(sql.Literal(os.environ["APP_DB_PASSWORD"])))
+        print("Password of notes_app set.", flush=True)
         PY
       ]
 
@@ -224,7 +238,7 @@ resource "terraform_data" "schema_inputs" {
 }
 
 # Start the job; azurerm cannot do that, azapi makes the same call as az containerapp job start. The start does not wait
-# until the job is done: in the first minute after a new database, logging in can still fail.
+# until the job is done: in the first minutes after a new database, logging in can still fail.
 resource "azapi_resource_action" "schema_start" {
   type        = "Microsoft.App/jobs@2025-07-01"
   resource_id = azurerm_container_app_job.schema.id
