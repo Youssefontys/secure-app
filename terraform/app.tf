@@ -224,7 +224,7 @@ resource "terraform_data" "schema_inputs" {
 }
 
 # Start the job; azurerm cannot do that, azapi makes the same call as az containerapp job start. The start does not wait
-# until the job is done: in the first minute after a new database, logging in can still fail.
+# until the job is done; deploy_azure.py does, and starts it once more if it failed (check_schema_job).
 resource "azapi_resource_action" "schema_start" {
   type        = "Microsoft.App/jobs@2025-07-01"
   resource_id = azurerm_container_app_job.schema.id
