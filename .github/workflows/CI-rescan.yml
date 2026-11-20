@@ -7,8 +7,9 @@ name: Rescan
 
 on:
   schedule:
-    # Every day at 05:17 UTC: not on the hour, when the queue of scheduled runs on GitHub is busiest.
-    - cron: "17 5 * * *"
+    # Every day at 03:40 UTC (04:40 in the Netherlands in winter, 05:40 in summer): at night, so the result is there in
+    # the morning, and not on the hour or the half hour, when the queue of scheduled runs on GitHub is busiest.
+    - cron: "40 3 * * *"
   pull_request:
     branches: [main]
     paths: [.github/workflows/CI-rescan.yml]
