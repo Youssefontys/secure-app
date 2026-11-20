@@ -30,10 +30,11 @@ flag.
 
 ## Hints
 
-Two hints, each from a set day on. Ask me for one; using a hint is fine, just say so when you hand in the flag.
+Three hints, each from a set day on. Ask me for one; using a hint is fine, just say so when you hand in the flag.
 
 - **Hint 1, from Tuesday 8 December:** a file name.
-- **Hint 2, from Thursday 10 December:** a string.
+- **Hint 2, from Wednesday 9 December:** a tool.
+- **Hint 3, from Thursday 10 December:** a string.
 
 What a hint means, and where it fits, is up to you.
 

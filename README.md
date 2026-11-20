@@ -25,7 +25,7 @@ The baseline only does what is needed to be functional: register, log in, log ou
 - `.github/workflows/CI-dast.yml` - on every pull request to `main`, the ZAP baseline (DAST) against the app on the runner, with a decision per finding in `zap-rules.tsv`; a finding without one fails the job
 - `vex/` - `openvex.json`, which says per vulnerability in the image whether it affects the image and why, and in `README.md` how a finding is triaged
 - `SECURITY.md` - how to report a vulnerability privately, and what is in scope
-- `REDTEAM.md` - the brief for the Red Teamers in the hacking week (7 to 11 December 2026): the target, the flag, more challenges, two hints by date, and the rules
+- `REDTEAM.md` - the brief for the Red Teamers in the hacking week (7 to 11 December 2026): the target, the flag, more challenges, three hints by date, and the rules
 - `.github/workflows/CI-iac.yml` - on every pull request that changes `terraform/`, Trivy checks it for misconfigurations, with a decision per finding in `.trivyignore.yaml`
 - `tests/` - the security test against the local stack: `securitytest.py` runs one test per topic (`twofactortest.py` and the others). It only runs with `--wipe`
 
