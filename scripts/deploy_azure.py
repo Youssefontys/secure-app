@@ -25,9 +25,11 @@ AZ_LOGIN_HELP = """First sign in to Azure: you are not signed in yet, or no subs
 # An email address, as an allowlist (MIT-22); the same rule as the validation of alert_email in terraform/variables.tf.
 EMAIL = r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}"
 EMAILS = rf"-|{EMAIL}(,{EMAIL})*"  # none (-), or addresses separated by commas
-# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy"):
-# they look back 15 minutes, and a line reaches Log Analytics a few minutes after it happens.
-MUTE_MINUTES = 30
+# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy").
+# They look back 15 minutes, so the last firing comes up to 15 minutes after the last Key Vault read: measured on
+# 20-11-2026, reads until 00:39:29, the apply done at 00:40:20, firings at 00:44, 00:49 and 00:54:31. 15 would have
+# fit by 49 seconds; 20 gives one evaluation (5 minutes) to spare, also for a restart right after the apply.
+MUTE_MINUTES = 20
 
 
 # Is the image there, and may everyone pull it? It must: Container Apps does not sign in to ghcr.io.
@@ -68,12 +70,13 @@ def state_region():
 
 # Opens the window of the rule that holds back the mails a deploy causes itself, from now on for MUTE_MINUTES. Before
 # the first apply the rule does not exist yet, and Terraform gives it a first window itself. A failure only costs a
-# mail about your own deploy, so it warns instead of stopping.
-def mute_own_alerts():
-    rule = output("deploy_mute_rule_id")
-    if not rule:
-        return
-    az, url = shutil.which("az"), f"https://management.azure.com{rule}?api-version=2021-08-08"
+# mail about your own deploy, so it warns instead of stopping. Returns the rule's id, so the second opening does not
+# ask Terraform again: every terraform output fetches the state from Azure, about half a minute.
+def mute_own_alerts(rule_id=""):
+    rule_id = rule_id or output("deploy_mute_rule_id")
+    if not rule_id:
+        return ""
+    az, url = shutil.which("az"), f"https://management.azure.com{rule_id}?api-version=2021-08-08"
     got = subprocess.run([az, "rest", "--method", "get", "--url", url], capture_output=True, text=True)
     if got.returncode == 0:
         rule = json.loads(got.stdout)
@@ -91,8 +94,9 @@ def mute_own_alerts():
         if put.returncode == 0:
             print(f"🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
                   f"{until.astimezone():%H:%M}")
-            return
+            return rule_id
     print("⚠️  Could not hold back the mails about this deploy itself; a mail from the Key Vault alert may follow.")
+    return rule_id
 
 
 # The outputs at the end, in the order of outputs.tf: what you use yourself, a blank line, then what only this script
@@ -223,11 +227,11 @@ def run():
 
     # Before Terraform, because its plan already reads the Key Vault secrets while you decide on yes; and again after
     # it, so a slow yes or a long apply still has the full window behind it.
-    mute_own_alerts()
+    rule_id = mute_own_alerts()
     # The question for yes stays: this turns on resources that cost money.
     if not terraform("apply", *(f"-var={v}" for v in variables)):
         stop("terraform apply did not work, or you did not type yes; the message is above.")
-    mute_own_alerts()
+    mute_own_alerts(rule_id)
     if from_github and signed_in:
         setup_github(github)
     print("\n🎉 Done!\n")

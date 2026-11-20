@@ -138,7 +138,7 @@ resource "azurerm_role_assignment" "alert_reader" {
 # revision restarts the app, and a from-scratch build assigns ~11 roles at once (the role alert caught a chunk of its
 # own first batch on 19-11-2026, 11 mails, because an assignment's event arrives later than Terraform finishes it).
 # This rule holds back only those three mails, and only in a window: deploy_azure.py opens one before Terraform and
-# again after it (30 minutes), and a new rule starts with an hour for the from-scratch build that creates it. The
+# again after it (20 minutes), and a new rule starts with an hour for the from-scratch build that creates it. The
 # alerts still fire and stay visible in Azure, marked as suppressed; lockouts, failed logins, errors, unreadable values
 # and the budget keep mailing during a deploy. The window closes by itself, also when the script stops halfway.
 # The subscription as scope, like the role alert: not every role a deploy assigns sits inside this resource group.
