@@ -1,0 +1,56 @@
+# Scans the published image again every day, with the vulnerabilities known that day (MC-11): a CVE published after the
+# image was built does not wait for the next push to show up. The same pinned Trivy and the same brake as the scan in
+# CI-image.yml, on the image that main points to now (the tag app-<tree>, which never moves). A finding makes the run
+# fail, and GitHub mails whoever last changed this schedule. Publishes and deploys nothing; Deploy only listens to Image.
+# Also on a pull request that changes this file, so a change to the rescan proves itself against the real image.
+name: Rescan
+
+on:
+  schedule:
+    # Every day at 05:17 UTC: not on the hour, when the queue of scheduled runs on GitHub is busiest.
+    - cron: "17 5 * * *"
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/CI-rescan.yml]
+  workflow_dispatch:
+
+# No rights by default; the job only reads the repo, and the image on ghcr.io is public.
+permissions: {}
+
+env:
+  # The same pin as in CI-image.yml; Dependabot does not see an image in a run line, so update both together.
+  TRIVY: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+
+jobs:
+  rescan:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Of main, also on a pull request: the image to rescan is the published one, not one this branch would build.
+      - name: Pull the published image
+        run: |
+          git fetch --quiet --depth=1 origin main
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:app-$(git rev-parse FETCH_HEAD:app)"
+          if ! docker pull --quiet "$image"; then
+            echo "Not on ghcr.io (yet): $image. Image publishes it after a push to main; try again once that is green."
+            exit 1
+          fi
+          echo "Scanning $(docker inspect --format '{{index .RepoDigests 0}}' "$image")"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+
+      # As in CI-image.yml: the SBoM from the image as a tar file, then the scan on the SBoM.
+      - name: Make SBoM
+        run: |
+          docker save "$IMAGE" -o "$RUNNER_TEMP/image.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan" "$TRIVY" image --input /scan/image.tar --format cyclonedx --output /scan/sbom.json --quiet
+          jq --arg name "$IMAGE" '.metadata.component.name = $name' "$RUNNER_TEMP/sbom.json" > sbom.cdx.json
+
+      # The same brake as CI-image.yml (MIT-35): HIGH or CRITICAL fails, unless vex/openvex.json says the image is not
+      # affected (MIT-41). The VEX itself is checked in CI-image.yml on every pull request that could change it.
+      - name: Scan for known vulnerabilities
+        run: docker run --rm -v "$PWD:/scan" "$TRIVY" sbom /scan/sbom.cdx.json --severity HIGH,CRITICAL --vex /scan/vex/openvex.json --show-suppressed --exit-code 1 --no-progress
