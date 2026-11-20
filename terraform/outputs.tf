@@ -1,6 +1,3 @@
-# In the order deploy_azure.py prints them at the end: first what you use yourself, then what only the script uses.
-# Terraform's own list above that is always alphabetical.
-
 output "app_url" {
   value = "https://${azurerm_container_app.app.ingress[0].fqdn}"
 }
