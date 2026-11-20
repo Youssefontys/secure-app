@@ -180,8 +180,9 @@ removed {
 # A role assigned anywhere in the subscription (MC-31): whoever has the sign-in of the administrator can give themselves
 # any role, and this is where that shows. From the activity log of Azure, not from the log of the app, and free.
 # Only Succeeded: Azure logs every assignment twice, Started and Succeeded, and an activity log alert mails on every
-# event. Only created after the rule above, so a from-scratch build's own assignments land in its first window; a
-# role assigned by hand, outside a deploy, mails.
+# event. And only after the role assignments of Terraform itself and the rule above: the order alone did not keep the
+# first apply from mailing its own (11 mails, 19-11-2026), the rule's first window does. A role assigned by hand,
+# outside a deploy, mails.
 resource "azurerm_monitor_activity_log_alert" "roles" {
   name                = "alert-${local.name}-roles"
   resource_group_name = azurerm_resource_group.main.name
@@ -190,7 +191,14 @@ resource "azurerm_monitor_activity_log_alert" "roles" {
   description         = "A role was assigned in the subscription (MC-31)."
   tags                = local.tags
 
-  depends_on = [azurerm_monitor_alert_processing_rule_suppression.deploy]
+  depends_on = [
+    azurerm_monitor_alert_processing_rule_suppression.deploy,
+    azurerm_role_assignment.alert_reader,
+    azurerm_role_assignment.app_secrets,
+    azurerm_role_assignment.deploy,
+    azurerm_role_assignment.kv_operator,
+    azurerm_role_assignment.schema_secrets,
+  ]
 
   criteria {
     category       = "Administrative"
