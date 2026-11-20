@@ -25,11 +25,11 @@ AZ_LOGIN_HELP = """First sign in to Azure: you are not signed in yet, or no subs
 # An email address, as an allowlist (MIT-22); the same rule as the validation of alert_email in terraform/variables.tf.
 EMAIL = r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}"
 EMAILS = rf"-|{EMAIL}(,{EMAIL})*"  # none (-), or addresses separated by commas
-# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy").
-# They look back 15 minutes, so the last firing comes up to 15 minutes after the last Key Vault read: measured on
-# 20-11-2026, reads until 00:39:29, the apply done at 00:40:20, firings at 00:44, 00:49 and 00:54:31. 15 would have
-# fit by 49 seconds; 20 gives one evaluation (5 minutes) to spare, also for a restart right after the apply.
-MUTE_MINUTES = 20
+# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy"): the
+# same 30 minutes as every alert's pause after a mail, so one number everywhere. They look back 15 minutes, so the last
+# firing comes up to 15 minutes after the last Key Vault read: measured on 20-11-2026, reads until 00:39:29, the apply
+# done at 00:40:20, firings at 00:44, 00:49 and 00:54:31. 15 would have fit by 49 seconds; 20 is no pause Azure allows.
+MUTE_MINUTES = 30
 
 
 # Is the image there, and may everyone pull it? It must: Container Apps does not sign in to ghcr.io.

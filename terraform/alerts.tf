@@ -22,11 +22,8 @@ resource "azurerm_monitor_action_group" "security" {
   }
 }
 
-# What gets a mail, each a query on the log of the app in Log Analytics: what it means, the query, over how long, from
-# how many lines, and how long it stays quiet after a mail. A new alert is one line here.
-# Quiet for an hour so one attack does not mail every 5 minutes, except where a deploy itself fires the alert (your own
-# Key Vault reads, a new revision): there an hour would also hide a real read or restart in the hour after every
-# deploy. 15 minutes is the window itself, so the same lines still never mail twice. The first one is the lockout of MIT-37; the others are for what a
+# What gets a mail, each a query on the log of the app in Log Analytics: what it means, the query, over how long, and
+# from how many lines. A new alert is one line here. The first one is the lockout of MIT-37; the others are for what a
 # lockout does not show (MC-28): a value that does not decrypt, an error someone provokes, and failed logins spread
 # over more addresses or names than one counter sees.
 locals {
@@ -37,21 +34,18 @@ locals {
       query       = "${local.log} \"lockout_started\""
       window      = "PT5M"
       above       = 0
-      quiet       = "PT1H"
     }
     unreadable = {
       description = "A stored value did not decrypt: changed or moved in the database, or another key (note_unreadable, MC-08, MC-23)."
       query       = "${local.log} \"note_unreadable\""
       window      = "PT5M"
       above       = 0
-      quiet       = "PT1H"
     }
     error = {
       description = "The app logged an unexpected error (MIT-25, MC-26)."
       query       = "${local.log} \"Unexpected error\""
       window      = "PT5M"
       above       = 0
-      quiet       = "PT1H"
     }
     # More than one address can do before it is locked (20, in hackmode 100): so several addresses, or many names.
     failed-logins = {
@@ -59,7 +53,6 @@ locals {
       query       = "${local.log} \"login_failed\""
       window      = "PT15M"
       above       = var.throttle_ip_mode == "hackweek" ? 120 : 25
-      quiet       = "PT1H"
     }
     # AZKVAuditLogs, the resource-specific table from the diagnostic settings in keyvault.tf: a SecretGet by
     # anyone other than the app's own identity (the vault) or the schema job's identity (the owner's vault).
@@ -73,7 +66,6 @@ locals {
       query       = "AZKVAuditLogs | where OperationName == \"SecretGet\" | extend caller = tostring(coalesce(parse_json(Identity).claim.oid, parse_json(Identity).claim[\"http://schemas.microsoft.com/identity/claims/objectidentifier\"])) | where caller !in (\"${azurerm_user_assigned_identity.app.principal_id}\", \"${azurerm_user_assigned_identity.schema.principal_id}\")"
       window      = "PT15M"
       above       = 0
-      quiet       = "PT15M"
     }
     # Container Apps puts its own events in a second table, ContainerAppSystemLogs_CL: a cold start alone makes
     # ProbeFailed (the readiness probe, before Gunicorn is up) and a successful one-shot job container both
@@ -87,7 +79,6 @@ locals {
       query       = "ContainerAppSystemLogs_CL | where Type_s == \"Warning\" | where Reason_s !in (\"ProbeFailed\", \"ScaledObjectDeleted\") | where not(Log_s has \"exit code '0'\")"
       window      = "PT15M"
       above       = 0
-      quiet       = "PT15M"
     }
   }
 }
@@ -103,8 +94,10 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "security" {
   severity             = 2
   evaluation_frequency = "PT5M"
   window_duration      = each.value.window
-  # Per alert: quiet in the locals above.
-  mute_actions_after_alert_duration = each.value.quiet
+  # After a mail, 30 minutes without another from the same alert: one attack does not mail every 5 minutes, the same
+  # lines never mail twice (no window is longer than 15 minutes), and it is the deploy window of deploy_azure.py too,
+  # so one number everywhere. Azure allows 15 or 30 here, not 20; 15 would leave the deploy window 49 seconds to spare.
+  mute_actions_after_alert_duration = "PT30M"
   # In a new workspace the table only exists after the first log line; otherwise Azure refuses the rule at creation.
   skip_query_validation = true
   tags                  = local.tags
@@ -138,9 +131,10 @@ resource "azurerm_role_assignment" "alert_reader" {
 # revision restarts the app, and a from-scratch build assigns ~11 roles at once (the role alert caught a chunk of its
 # own first batch on 19-11-2026, 11 mails, because an assignment's event arrives later than Terraform finishes it).
 # This rule holds back only those three mails, and only in a window: deploy_azure.py opens one before Terraform and
-# again after it (20 minutes), and a new rule starts with an hour for the from-scratch build that creates it. The
-# alerts still fire and stay visible in Azure, marked as suppressed; lockouts, failed logins, errors, unreadable values
-# and the budget keep mailing during a deploy. The window closes by itself, also when the script stops halfway.
+# again after it (30 minutes, the same as the pause after a mail above), and a new rule starts with an hour for the
+# from-scratch build that creates it. The alerts still fire and stay visible in Azure, marked as suppressed; lockouts,
+# failed logins, errors, unreadable values and the budget keep mailing during a deploy. The window closes by itself,
+# also when the script stops halfway.
 # The subscription as scope, like the role alert: not every role a deploy assigns sits inside this resource group.
 resource "azurerm_monitor_alert_processing_rule_suppression" "deploy" {
   name                = "apr-${local.name}-deploy"
