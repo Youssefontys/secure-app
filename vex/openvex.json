@@ -4,8 +4,8 @@
   "author": "Youssefontys",
   "role": "Maintainer of the secure-app image",
   "timestamp": "2026-11-15T12:00:00Z",
-  "last_updated": "2026-11-17T12:00:00Z",
-  "version": 2,
+  "last_updated": "2026-11-21T12:00:00Z",
+  "version": 3,
   "statements": [
     {
       "vulnerability": {
@@ -575,6 +575,25 @@
       "status": "not_affected",
       "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
       "impact_statement": "The flaw is in the handling of the CAMMAC authorization data (a container for authentication indicators); whether it sits in the KDC or in libkrb5 is not described in the Debian tracker. An attacker reaches it with a message to or from a Kerberos server. The app talks to no Kerberos server: its database connection logs in with a password, not GSSAPI, there is no krb5.conf, no KRB5 variable and no ticket cache. The security test checks all four, in the running container (MIT-41)."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-124709"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/libssl3t64@3.5.7-1~deb13u3"
+        },
+        {
+          "@id": "pkg:deb/debian/openssl@3.5.7-1~deb13u3"
+        },
+        {
+          "@id": "pkg:deb/debian/openssl-provider-legacy@3.5.7-1~deb13u3"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in the QUIC server of OpenSSL: a server that rejects a stream the peer opened can keep its state, so a client can make it run out of memory. Nothing in the image runs a QUIC server. Of the files that link libssl.so.3 (the openssl program, libpq, libldap, the http method of apt and Python's _ssl), none names a QUIC server function (OSSL_QUIC_server_method, SSL_new_listener, SSL_accept_connection); only the openssl program names the QUIC client, and the app never starts a program. The app listens only on TCP port 5000 (Gunicorn, HTTP/1.1) behind the HTTP ingress of Container Apps, and QUIC needs UDP; Python's ssl module and libpq only make TLS connections over TCP. Measured in the running container on 21-11-2026. Not in CISA KEV, EPSS 0.0057."
     }
   ]
 }
