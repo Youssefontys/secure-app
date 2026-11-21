@@ -80,6 +80,9 @@ def run():
     check("  a new version with the old key as previous starts", starts("DATA_ENCRYPTION_KEY_VERSION=v2", "DATA_ENCRYPTION_KEY_PREVIOUS=" + "cd" * 32), "start")
     check("without HTTPS_ONLY: cookie only over HTTPS (safe by default)", in_app(
         "import app; print(app.app.config['SESSION_COOKIE_SECURE'])", run=("env", "-u", "HTTPS_ONLY", "python", "-c")).stdout.strip(), "True")
+    check("  and then the cookie is called __Host-session, locally on HTTP session", (in_app(
+        "import app; print(app.app.config['SESSION_COOKIE_NAME'])", run=("env", "-u", "HTTPS_ONLY", "python", "-c")).stdout.strip(),
+        in_app("import app; print(app.app.config['SESSION_COOKIE_NAME'])").stdout.strip()), ("__Host-session", "session"))
 
     print("== input validation (MIT-22)")
     for name in ("<script>alert(1)</script>", "ab", "a" * 21, "with space", "testacc1-b"):
@@ -182,6 +185,9 @@ def run():
           ("302 /login", "302 /login"))
     check("  the signature removed, or only the data left: back to the login", (with_cookie(good.rsplit(".", 1)[0]), with_cookie(good.split(".")[0])),
           ("302 /login", "302 /login"))
+    r = req(ch, "/logout", {})
+    check("logging out: the browser also empties its cache and storage of this site, not all cookies",
+          (loc(r), r[2].get("Clear-Site-Data")), ("302 /login", '"cache", "storage"'))
 
     print("== database role (MIT-27)")
     probe = json.loads(in_app(ROLE_PROBE).stdout)

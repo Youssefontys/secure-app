@@ -321,7 +321,12 @@ def logout():
         query("UPDATE users SET session_version = session_version + 1 WHERE id = %s", (g.user.id,))
         events.event("logout")
     session.clear()
-    return redirect(url_for("auth.login"))
+    response = redirect(url_for("auth.login"))
+    # The browser also empties its cache and storage of this site (OWASP). Not "cookies": a browser clears those for the
+    # whole registrable domain, here all of azurecontainerapps.io and so the apps of others too; the session cookie is
+    # gone already through session.clear().
+    response.headers["Clear-Site-Data"] = '"cache", "storage"'
+    return response
 
 
 # Checks the TOTP code from the form: None if it is right, otherwise a CodeError.
