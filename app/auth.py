@@ -21,6 +21,10 @@ from db import query
 bp = Blueprint("auth", __name__)
 
 PENDING_MAX_SECONDS = 300
+# A session ends after 30 minutes without a request, and 8 hours after the login however active (MIT-29, MC-04).
+# OWASP: 15 to 30 minutes without activity for an application with little at stake.
+IDLE_MAX_SECONDS = 30 * 60
+SESSION_MAX_SECONDS = 8 * 3600
 CodeError = namedtuple("CodeError", "message minutes")
 SETUP_ENDPOINTS = {"account.setup_2fa", "account.qr_2fa"}
 # The only routes without a login; every other route is closed by default (MIT-24).
@@ -49,20 +53,29 @@ def load_user():
     user_id = session.get("user_id")
     if user_id is None or request.endpoint == "static":
         return
+    # The times are in the signed cookie, so nobody can change them. A cookie from before these two times has neither,
+    # and so ends too: one new login after the update. Not logged: ending a session that sat still is not an attack.
+    now = int(time.time())
+    if now - session.get("seen", 0) > IDLE_MAX_SECONDS or now - session.get("since", 0) > SESSION_MAX_SECONDS:
+        session.clear()
+        flash("Your session has expired. Please log in again.")
+        return
     user = query("SELECT id, username, session_version, totp_enabled FROM users WHERE id = %s", (user_id,), one=True)
     if user is None or user.session_version != session.get("session_version"):
         events.event("session_rejected", user_id=user_id)
         session.clear()
         flash("Your session is no longer valid. Please log in again.")
         return
+    session["seen"] = now
     g.user = user
 
 
-# A fresh session for this user, with the current session version.
+# A fresh session for this user, with the current session version, and the time of the login.
 def start_session(user_id, version):
     session.clear()
     session["user_id"] = user_id
     session["session_version"] = version
+    session["since"] = session["seen"] = int(time.time())
 
 
 # After an UPDATE that also raises session_version: other sessions expire, the current one gets the new version.
@@ -308,7 +321,12 @@ def logout():
         query("UPDATE users SET session_version = session_version + 1 WHERE id = %s", (g.user.id,))
         events.event("logout")
     session.clear()
-    return redirect(url_for("auth.login"))
+    response = redirect(url_for("auth.login"))
+    # The browser also empties its cache and storage of this site (OWASP). Not "cookies": a browser clears those for the
+    # whole registrable domain, here all of azurecontainerapps.io and so the apps of others too; the session cookie is
+    # gone already through session.clear().
+    response.headers["Clear-Site-Data"] = '"cache", "storage"'
+    return response
 
 
 # Checks the TOTP code from the form: None if it is right, otherwise a CodeError.
