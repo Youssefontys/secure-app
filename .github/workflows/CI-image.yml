@@ -141,7 +141,9 @@ jobs:
     steps:
       - *checkout
       - *lint
-      - *zizmor
+      # No zizmor here: it gets the token of the job, and in this job that may push packages and write attestations.
+      # The workflows on main only got there through a pull request, whose required check ran zizmor with a read-only
+      # token; a tool from outside gets no more rights than it needs (MIT-34).
 
       # The tag app-<tree> never moves: if the image of this app/ is on ghcr.io already, that one is pulled, scanned again
       # with the vulnerabilities of today and given the tag of this commit, instead of a new build under the same tag.
