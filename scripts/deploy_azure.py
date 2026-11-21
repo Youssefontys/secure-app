@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -135,6 +136,51 @@ def check_schema_job():
         print("   ⚠️  Not seen to finish. If logging in or registering gives an error, start it by hand; if that fails\n"
               "      too, look at the job caj-notes-schema in the portal (Execution history):\n"
               f"      az containerapp job start {' '.join(SCHEMA_JOB)}")
+
+
+# What is wrong in the answers of the app on Azure; empty is fine. The same checks as Deploy on GitHub (CD-azure.yml;
+# change both together): HSTS, the CSP and the other headers, the session cookie with the flags of __Host- (MIT-21,
+# MIT-23, MIT-40), and HTTP that goes to HTTPS with a 301.
+def site_problems(headers, plain):
+    want = {"Strict-Transport-Security": "max-age=", "Content-Security-Policy": "default-src 'self'",
+            "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"}
+    problems = [f"no {name}: {value}" for name, value in want.items() if value.lower() not in (headers.get(name) or "").lower()]
+    cookie = next((c for c in headers.get_all("Set-Cookie") or [] if c.startswith("__Host-session=")), None)
+    flags = [part.strip().lower() for part in (cookie or "").split(";")[1:]]
+    if cookie is None:
+        problems.append("no session cookie __Host-session")
+    else:
+        problems += [f"the cookie __Host-session without {flag}" for flag in ("Secure", "HttpOnly", "SameSite=Lax", "Path=/")
+                     if flag.lower() not in flags]
+    if any(flag.startswith("domain=") for flag in flags):
+        problems.append("the cookie __Host-session has a Domain")
+    if plain is None or plain.status != 301 or not (plain.headers.get("Location") or "").startswith("https://"):
+        problems.append(f"HTTP does not go to HTTPS with a 301 (got {plain.status if plain else 'no answer'})")
+    return problems
+
+
+# The app on Azure, asked as a browser would, without following redirects. Terraform sets what decides these answers
+# (HTTPS_ONLY and allow_insecure_connections in app.tf), and this script is what runs Terraform, so they are checked
+# here, after every deployment; Deploy on GitHub only replaces the image. A new revision can take a minute to answer.
+def live_problems(url):
+    class Stay(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args):
+            return None
+
+    def fetch(address):
+        try:
+            return urllib.request.build_opener(Stay).open(address, timeout=30)
+        except urllib.error.HTTPError as error:
+            return error
+        except OSError:
+            return None
+
+    for _ in range(10):
+        page = fetch(f"{url}/login")
+        if page is not None and page.status == 200:
+            return site_problems(page.headers, fetch(f"http://{urllib.parse.urlsplit(url).netloc}/login"))
+        time.sleep(10)
+    return [f"{url}/login did not answer with 200 within 100 seconds"]
 
 
 # The environment azure in GitHub (MIT-44): only main may deploy, and only after your approval. The three IDs as
@@ -274,6 +320,15 @@ def run():
     url = after.get("app_url", "")
     if from_github and signed_in:
         setup_github(github, after.get("deploy_client_id", ""))
+    print("\n🔎 On Azure: HTTPS, the headers and the session cookie")
+    if not url:
+        print("   ⚠️  No address in the Terraform output, so not checked.")
+    elif problems := live_problems(url):
+        stop(f"The app is on {url}, but on Azure:\n" + "\n".join(f"   ❌ {p}" for p in problems) +
+             "\n   💡 What decides this: HTTPS_ONLY and the ingress in terraform/app.tf, the headers in app/app.py.")
+    else:
+        print("   ✅ HTTP goes to HTTPS (301), HSTS, CSP, nosniff, no-store, and __Host-session with Secure, HttpOnly,\n"
+              "      SameSite=Lax, Path=/ and no Domain")
     print(f"\n🎉 Done! The app is on {url}")
     print("💡 Updating: merge a pull request to main, and approve the deployment in the Actions tab; without GitHub set up,\n"
           "   wait until the Action Image is green and run this script again.")
