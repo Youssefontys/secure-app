@@ -35,6 +35,14 @@ servers that are not in the image: `vulnerable_code_not_present`. 3 are in code 
 an attacker only reaches through a Kerberos server, and the app talks to none; the security test checks that:
 `vulnerable_code_cannot_be_controlled_by_adversary`. More findings, but each one now has an owner who updates it.
 
+On 21-11-2026 the scan blocked a pull request that changed no package: CVE-2026-124709, published after the last build,
+a memory leak in the QUIC server of OpenSSL 3.5.7 (libssl3t64, openssl and openssl-provider-legacy), without a fix in
+Debian 13. Not in KEV, EPSS 0.0057. All three are needed: libpq, krb5 and coreutils need libssl, ca-certificates needs
+the openssl program. Measured in the running container: no file that links libssl names a QUIC server function, the app
+listens only on TCP port 5000, and QUIC needs UDP: `vulnerable_code_not_in_execute_path`. The OpenSSL that cryptography
+carries in its own wheel (4.0.3) does contain the QUIC server, but the scan does not see that copy (the limit of
+sub-question 3), and cryptography offers no QUIC that the app could call.
+
 ## The flow
 
 Per vulnerability, not per finding: first group the findings of the same vulnerability.
@@ -82,7 +90,8 @@ it does not happen automatically yet.
   the pull request sees that (MC-30, step 6).
 - **The work.** Every new vulnerability of HIGH or CRITICAL in Debian, also without a fix, blocks every pull request
   until there is a decision, also a pull request that only changes the README.
-- **A vulnerability that becomes known after the build** is only seen by the scan at the next pull request or push.
+- **A vulnerability that becomes known after the build** is seen within a day by the daily Rescan (`CI-rescan.yml`,
+  since 20-11-2026), or sooner by the next pull request or push. It runs in the meantime.
 - **The VEX is public.** It tells which vulnerabilities are in the image, and why we think they cannot be reached.
   That is in the SBOM too; the code and the image are already public.
 
