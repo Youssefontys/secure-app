@@ -135,7 +135,7 @@ def register():
         # The form itself blocks this with pattern and maxlength: reaching here is not a browser typo.
         events.event("input_malformed", field="username")
         return render_template("auth.html", error="Choose a username of 3 to 20 characters: letters, digits and _."), 400
-    if error := passwords.password_problem(password):
+    if error := passwords.password_problem(password, username=username):
         return render_template("auth.html", error=error), 400
     # Count only just before hashing: only a registration that really calculates counts (MIT-30, MC-10).
     if minutes := throttle.attempt(throttle.limit("register_ip", throttle.client_ip(request.remote_addr))):
@@ -281,7 +281,7 @@ def forgot_password():
 
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
-    if problem := passwords.password_problem(password, request.form.get("password_repeat", "")):
+    if problem := passwords.password_problem(password, request.form.get("password_repeat", ""), username):
         return render_template("login_forgot.html", error=problem), 400
     # Reachable without a password, so the same counters as at login: per address and per name per address.
     limits = throttle.password_limits(username, request.remote_addr)
