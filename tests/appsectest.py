@@ -15,10 +15,12 @@ with app.app.app_context():
 signer = app.app.session_interface.get_signing_serializer(app.app)
 class Stop(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args): return None
-out = []
-for hours in (7, 9, 24 * 30):
-    with mock.patch("time.time", return_value=time.time() - hours * 3600):
-        cookie = signer.dumps({"user_id": u.id, "session_version": u.session_version})
+now, out = time.time(), []
+# Minutes since the login, since the last request, and since Flask signed the cookie (it signs it on every request).
+for since, seen, signed in ((7 * 60, 1, 1), (9 * 60, 1, 1), (60, 29, 29), (60, 31, 31), (30 * 24 * 60,) * 3):
+    with mock.patch("time.time", return_value=now - signed * 60):
+        cookie = signer.dumps({"user_id": u.id, "session_version": u.session_version,
+                               "since": int(now - since * 60), "seen": int(now - seen * 60)})
     try:
         out.append(urllib.request.build_opener(Stop).open(urllib.request.Request("http://127.0.0.1:5000/", headers={"Cookie": "session=" + cookie})).status)
     except urllib.error.HTTPError as e:
@@ -161,7 +163,8 @@ def run():
     cache = [req(ch, p)[2].get("Cache-Control") for p in ("/", "/account")] + [req(client(), p)[2].get("Cache-Control") for p in ("/login", "/does-not-exist")]
     check("no-store on pages, also logged in and on a 404", cache, ["no-store"] * 4)
     check("  static files may be cached", req(client(), "/static/style.css")[2].get("Cache-Control") != "no-store", True)
-    check("session of 7 hours works, of 9 hours and 30 days not", json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", "302 /login"])
+    check("session 7 hours after the login works, 9 hours not; 29 minutes still works, 31 not; a 30-day-old cookie not",
+          json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", 200, "302 /login", "302 /login"])
 
     print("== a changed cookie is refused (MC-04)")
     good = next(c.value for c in ch.jar if c.name == "session")

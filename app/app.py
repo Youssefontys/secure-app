@@ -38,8 +38,9 @@ if setting("TRUSTED_PROXIES", "0", ("0", "1")) == "1":
 app.config["SESSION_COOKIE_SECURE"] = setting("HTTPS_ONLY", "1", ("0", "1")) == "1"
 # Not sent with a form from another site (MC-05); the CSRF token is the second layer.
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-# Flask refuses a cookie whose signature is older; without this line 31 days (MIT-29, MC-04).
-# The app writes the cookie mainly at login, so this is about 8 hours after the login.
+# Flask refuses a cookie whose signature is older; without this line 31 days (MIT-29, MC-04). The app writes the cookie
+# on every request, so the real limits are in auth.py (30 minutes without a request, 8 hours after the login); this
+# stays as a second lock, in Flask itself.
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 # The largest form is a note of 250 characters; more is refused before it is read (MC-10).
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
