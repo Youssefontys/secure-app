@@ -215,6 +215,19 @@ def run():
              f"      https://github.com/{repo}/actions\n"
              "   Then again: python scripts/deployment.py azure", icon="⏳")
     print(f"   ✅ Ready, and Container Apps may pull it: {digest}")
+    # And signed by CI-image.yml on main, the image and its SBoM, as Deploy checks on GitHub. Without gh, or not signed
+    # in to it, that cannot be checked here: then a warning, not a stop.
+    if gh("auth", "status") is None:
+        print("   ⚠️  Not checked whether GitHub signed this image: gh is missing or not signed in (gh auth login).")
+    else:
+        for kind in ("https://slsa.dev/provenance/v1", "https://cyclonedx.org/bom"):
+            if gh("attestation", "verify", f"oci://{image}", "--repo", github, "--predicate-type", kind, "--source-ref",
+                  "refs/heads/main", "--signer-workflow", f"{github}/.github/workflows/CI-image.yml") is None:
+                stop(f"This image has no valid signature ({kind}) from CI-image.yml on main.\n"
+                     "   An image only gets one when the GitHub Action Image runs on main, which it does on every push\n"
+                     f"   there; or start it by hand: https://github.com/{repo}/actions/workflows/CI-image.yml\n"
+                     "   Then again: python scripts/deployment.py azure", icon="🔏")
+        print("   ✅ Signed by CI-image.yml on main: the image and its SBoM")
 
     hack = hackmode() if deployment.INTERACTIVE else {"THROTTLE_IP_MODE": None, "THROTTLE_PAIR_EXEMPT_USERS": None}
     # The mail on a lockout (alerts.tf): by default the address you signed in to az with. Not in the repo, which is public.
