@@ -26,14 +26,11 @@ def check():
     if request.method == "POST":
         # Fetch Metadata (MC-05): a modern browser says so itself, before the token is even read. Sec-Fetch-Site is
         # missing for an older browser or a script, so fall back to Origin; both missing is not a browser calling
-        # cross-site, so that is left to the token below.
+        # cross-site, so that is left to the token, which is only read if the request did not come from another site.
         site = request.headers.get("Sec-Fetch-Site")
         origin = request.headers.get("Origin")
-        if site == "cross-site" or (site is None and origin is not None and origin != request.url_root.rstrip("/")):
-            events.event("csrf_refused", endpoint=request.endpoint)
-            return render_template("error.html", code=400, message=REFUSED), 400
-        sent = request.form.get("csrf_token", "")
-        if not hmac.compare_digest(sent.encode(), expected.encode()):
+        cross_site = site == "cross-site" or (site is None and origin is not None and origin != request.url_root.rstrip("/"))
+        if cross_site or not hmac.compare_digest(request.form.get("csrf_token", "").encode(), expected.encode()):
             events.event("csrf_refused", endpoint=request.endpoint)
             return render_template("error.html", code=400, message=REFUSED), 400
     return None

@@ -39,25 +39,27 @@ NEEDS = {
 INTERACTIVE = sys.stdin.isatty()
 
 
-# Stop with the message, with blank lines around it so it stands out; same form as setup_azure.py.
+# Stop with the message, with blank lines around it so it stands out.
 def stop(message, icon="❌"):
     sys.exit(f"\n{icon} {message}\n\n🛑 Stopping.\n")
 
 
-# A question with a default; only an answer that fully matches pattern (allowlist, MIT-22).
+# A question with a default; only an answer that fully matches pattern (allowlist, MIT-22). shown replaces what is
+# between the brackets, for example with options that are no longer possible; without a default there are none.
 # No input (EOF) counts as no terminal: on Windows NUL also looks like one.
-def ask(question, default, pattern):
+def ask(question, default, pattern, shown=None):
     global INTERACTIVE
+    prompt = f"{question} [{shown or default}]: " if shown or default else f"{question}: "
     while True:
         try:
-            answer = input(f"{question} [{default}]: ").strip() or default
+            answer = input(prompt).strip() or default
         except EOFError:
             print()
             INTERACTIVE = False
             return default
         if re.fullmatch(pattern, answer):
             return answer
-        print("🤔 I do not know that answer; please try again.")
+        print("🤔 That is not possible here; please try again.")
 
 
 def yes(question):
@@ -100,6 +102,24 @@ def terraform(*args):
             return process.wait() == 0
         except KeyboardInterrupt:
             print("\n⏳ Waiting until Terraform has stopped cleanly...")
+
+
+# The error of az once: the lines Code, Message and Target usually repeat the first line.
+def az_error(stderr):
+    lines = [line for line in stderr.strip().splitlines() if not line.startswith("WARNING:")] or [""]
+    first = lines[0].removeprefix("ERROR: ")
+    return "\n".join([first, *(line for line in lines[1:] if not ((value := line.partition(": ")[2]) and value in first))])
+
+
+# The Azure CLI, without a shell (on Windows az is a .cmd file): the output, or on an error stop, or None with
+# ignore_error.
+def az(*args, ignore_error=False):
+    result = subprocess.run([shutil.which("az") or "az", *args], capture_output=True, text=True)
+    if result.returncode == 0:
+        return result.stdout.strip()
+    if ignore_error:
+        return None
+    stop(f"ERROR: {az_error(result.stderr)}")
 
 
 # Git in this folder; None if it does not work.
