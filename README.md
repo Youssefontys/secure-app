@@ -69,6 +69,7 @@ python -u tests/securitytest.py --wipe
 - Week 8, CD: after a merge that changes `app/`, GitHub Actions deploys the new image by digest once you approve it in the environment `azure`, through OIDC and a deploy identity that may only change the container app; the job image only runs from `main` and reuses a published image, so the tag `app-<tree>` never moves
 - Week 8, SAST and DAST: CodeQL on every pull request, required by the ruleset for HIGH or higher; Dependabot security updates; private vulnerability reporting with `SECURITY.md`; a secret scan in the check with a self-test that must find a planted token; the ZAP baseline on every pull request with a decision per rule; and the test vectors of RFC 6238 and 4226, a huge note number and a changed cookie in the security test
 - Week 9, VEX: every HIGH or CRITICAL now blocks, also without a fix, unless `vex/openvex.json` says with a reason that the image is not affected; a step checks every statement first; 12 statements for the 47 HIGH findings (11 vulnerabilities) of 15-11-2026; no setuid or setgid bit in the image; and a test that the app never loads the libraries the VEX says are never used
+- Week 9, privacy: a public privacy statement at `/privacy`, and a box to tick at registration that is not ticked in advance and is checked on the server too (Laws, MIT-48)
 
 ## Branches
 
