@@ -100,6 +100,10 @@ def run():
     check("the form has the box, required and not ticked", bool(re.search(r'<input type="checkbox" name="consent" value="yes" required>', form)), True)
     check("  with a link to the privacy statement", 'href="/privacy"' in form, True)
     check("the privacy statement is public", (req(client(), "/privacy")[0], "Privacy statement" in req(client(), "/privacy")[1]), (200, True))
+
+    print("== security.txt (RFC 9116)")
+    r = req(client(), "/.well-known/security.txt")
+    check("public, text/plain, with Contact and Expires", (r[0], r[2]["Content-Type"], "Contact:" in r[1], "Expires:" in r[1]), (200, "text/plain; charset=utf-8", True, True))
     before = sql("SELECT count(*) FROM users")
     r = req(client(), "/register", {"username": "consent1", "password": PW}, consent=False)
     check("register without the box: 400, no account", (r[0], msg(r[1]), sql("SELECT count(*) FROM users")), (400, CONSENT_RULE, before))
@@ -113,9 +117,9 @@ def run():
                               " for r in app.app.url_map.iter_rules() if r.endpoint not in auth.PUBLIC_ENDPOINTS]))").stdout)
     closed = [(e, loc(req(client(), rule.replace("<int:note_id>", "1"), None if "GET" in methods else {}))) for e, rule, methods in rules]
     check(f"all {len(rules)} non-public routes send an anonymous visitor to /login", [x for x in closed if x[1] != "302 /login"], [])
-    check("  only login, register, the recovery routes, logout, the privacy statement and static are public",
+    check("  only login, register, the recovery routes, logout, the privacy statement, security.txt and static are public",
           in_app("import auth; print(sorted(auth.PUBLIC_ENDPOINTS))").stdout.strip(),
-          "['auth.forgot_password', 'auth.login', 'auth.login_code', 'auth.login_recover', 'auth.logout', 'auth.privacy', 'auth.register', 'static']")
+          "['auth.forgot_password', 'auth.login', 'auth.login_code', 'auth.login_recover', 'auth.logout', 'auth.privacy', 'auth.register', 'auth.security_txt', 'static']")
 
     print("== security headers (MIT-21)")
     for path in ("/login", "/", "/does-not-exist"):

@@ -9,7 +9,7 @@ from collections import namedtuple
 from functools import wraps
 
 import psycopg
-from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, flash, g, redirect, render_template, request, session, url_for
 
 import encryption
 import events
@@ -24,7 +24,15 @@ PENDING_MAX_SECONDS = 300
 CodeError = namedtuple("CodeError", "message minutes")
 SETUP_ENDPOINTS = {"account.setup_2fa", "account.qr_2fa"}
 # The only routes without a login; every other route is closed by default (MIT-24).
-PUBLIC_ENDPOINTS = {"auth.register", "auth.login", "auth.login_code", "auth.login_recover", "auth.forgot_password", "auth.logout", "auth.privacy", "static"}
+PUBLIC_ENDPOINTS = {"auth.register", "auth.login", "auth.login_code", "auth.login_recover", "auth.forgot_password",
+                     "auth.logout", "auth.privacy", "auth.security_txt", "static"}
+# RFC 9116. The contact is GitHub's own private vulnerability reporting (SECURITY.md); Expires at most a year out,
+# so this itself expires rather than silently going stale.
+SECURITY_TXT = (
+    "Contact: https://github.com/Youssefontys/secure-app/security/advisories/new\n"
+    "Expires: 2027-11-18T00:00:00.000Z\n"
+    "Policy: https://github.com/Youssefontys/secure-app/security/policy\n"
+)
 # 3 to 20 characters: letters, digits and _ (MIT-22). At login another name counts as unknown.
 USERNAME = re.compile(r"[A-Za-z0-9_]{3,20}")
 FORGOT_WRONG = "Username, recovery code or code is incorrect."
@@ -90,6 +98,11 @@ def logged_out_only(view):
 @bp.route("/privacy")
 def privacy():
     return render_template("privacy.html")
+
+
+@bp.route("/.well-known/security.txt")
+def security_txt():
+    return Response(SECURITY_TXT, mimetype="text/plain")
 
 
 @bp.route("/register", methods=["GET", "POST"])
