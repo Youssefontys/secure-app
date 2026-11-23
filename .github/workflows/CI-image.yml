@@ -62,12 +62,29 @@ jobs:
           path: sbom.cdx.json
           retention-days: 90
 
-      # The brake (MIT-35), on the SBoM: every known vulnerability of HIGH or CRITICAL with a fix makes the job fail.
-      # Those without a fix pass for now; deciding on them is subquestion 2. On a pull request the ruleset then blocks
-      # the merge, on a push the job stops before publishing.
+      # Trivy also filters out a not_affected without a reason. So first ourselves: every statement in the VEX has a
+      # valid justification and an explanation, or for affected an action, and names packages with a version (MIT-41).
+      - &vex
+        name: Check VEX
+        run: |
+          jq -e '
+            def ok:
+              (if .status == "not_affected" then (.justification | IN("component_not_present", "vulnerable_code_not_present",
+                   "vulnerable_code_not_in_execute_path", "vulnerable_code_cannot_be_controlled_by_adversary",
+                   "inline_mitigations_already_exist")) and ((.impact_statement // "") != "")
+               elif .status == "affected" then (.action_statement // "") != ""
+               else .status == "under_investigation" end)
+              and (.products | length > 0) and all(.products[]; .["@id"] | test("^pkg:[a-z]+/[^@]+@."));
+            [.statements[] | select(ok | not) | .vulnerability.name] | if . == [] then true else error("invalid: \(.)") end
+          ' vex/openvex.json
+
+      # The brake (MIT-35), on the SBoM: every known vulnerability of HIGH or CRITICAL makes the job fail, also if there is no
+      # fix yet, unless vex/openvex.json says for that version that the image is not affected (MIT-41, research subquestion 2).
+      # The filtered findings are listed separately in the log. On a pull request the ruleset then blocks the merge, on a
+      # push the job stops before publishing.
       - &scan
         name: Scan for known vulnerabilities
-        run: docker run --rm -v "$PWD:/scan" "$TRIVY" sbom /scan/sbom.cdx.json --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+        run: docker run --rm -v "$PWD:/scan" "$TRIVY" sbom /scan/sbom.cdx.json --severity HIGH,CRITICAL --vex /scan/vex/openvex.json --show-suppressed --exit-code 1 --no-progress
 
       # Secrets in the files of the repo (MIT-45): the secret scanner of Trivy, the same pinned version, on the checkout. .git is
       # skipped: a pull request only adds files, and push protection of GitHub guards the pushes.
@@ -126,6 +143,7 @@ jobs:
 
       - *sbom
       - *keep
+      - *vex
       - *scan
 
       # The token through stdin and an environment variable, not in the command itself.
