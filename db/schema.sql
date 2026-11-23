@@ -44,6 +44,9 @@ CREATE TABLE notes (
     updated_at TIMESTAMPTZ
 );
 
+-- Postgres does not index a foreign key column by itself; every fetch and ownership check filters on it.
+CREATE INDEX ON notes (user_id);
+
 -- The app logs in as this role, not as the owner (MIT-27): reading and writing in its
 -- own tables, and nothing else. No creating or dropping tables, no roles, no
 -- files or programs through COPY. db/app-password.sh sets the password, so it is not in this file.
