@@ -28,6 +28,15 @@ when checking them:
 Severity alone therefore says little about this image. What counts is whether the vulnerable code is there, whether it
 runs, and whether an attacker can reach it.
 
+On 21-11-2026 the scan blocked a pull request that changed no package: CVE-2026-124709, published after the last build,
+a memory leak in the QUIC server of OpenSSL 3.5.7 (libssl3t64, openssl and openssl-provider-legacy), without a fix in
+Debian 13. Not in KEV, EPSS 0.0057. All three are in the base image: coreutils needs libssl, ca-certificates needs the
+openssl program. Measured on 21-11-2026 in the running container of an image with this base image: no file that links
+libssl names a QUIC server function. The app listens only on TCP port 5000, and QUIC needs UDP:
+`vulnerable_code_not_in_execute_path`. The OpenSSL copies that
+cryptography and psycopg-binary carry in their own wheels are not seen by the scan, and neither offers a QUIC server
+that the app could call.
+
 ## The flow
 
 Per vulnerability, not per finding: first group the findings of the same vulnerability.
