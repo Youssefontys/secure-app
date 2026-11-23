@@ -91,3 +91,17 @@ jobs:
           echo "Running: $(jq -r '.properties.template.containers[] | select(.name == "app") | .image' "$RUNNER_TEMP/app.json")"
           fqdn=$(jq -r .properties.configuration.ingress.fqdn "$RUNNER_TEMP/app.json")
           curl -sSf -o /dev/null --retry 10 --retry-delay 10 --retry-all-errors -w "https://$fqdn/login: %{http_code}\n" "https://$fqdn/login"
+          # What only Azure shows, after every deployment: the security test runs against the local stack, without the
+          # ingress. HTTPS only, the headers, and the flags of the session cookie (MIT-21, MIT-23, MIT-40).
+          headers=$(curl -sSf -D - -o /dev/null "https://$fqdn/login" | tr -d '\r')
+          for want in "strict-transport-security: max-age=" "content-security-policy: default-src 'self'" \
+                      "x-frame-options: DENY" "x-content-type-options: nosniff" "cache-control: no-store"; do
+            grep -qiF -- "$want" <<< "$headers" || { echo "Missing on https://$fqdn/login: $want"; exit 1; }
+          done
+          cookie=$(grep -i '^set-cookie: session=' <<< "$headers" || true)
+          for flag in Secure HttpOnly SameSite=Lax; do
+            grep -qi -- "; $flag" <<< "$cookie" || { echo "The session cookie has no $flag."; exit 1; }
+          done
+          plain=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "http://$fqdn/login")
+          case "$plain" in "301 https://"*) ;; *) echo "HTTP does not go to HTTPS with a 301: $plain"; exit 1 ;; esac
+          echo "Checked on Azure: HTTP goes to HTTPS (301), HSTS, CSP, nosniff, no-store, and the session cookie with Secure, HttpOnly and SameSite=Lax."
