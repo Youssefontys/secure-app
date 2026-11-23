@@ -37,6 +37,10 @@ libssl names a QUIC server function. The app listens only on TCP port 5000, and 
 cryptography and psycopg-binary carry in their own wheels are not seen by the scan, and neither offers a QUIC server
 that the app could call.
 
+On 23-11-2026, in the rebuild of this repository, the scan found a second one in the same QUIC code: CVE-2026-107494,
+retirement frames queued without a limit (published 18-11-2026, reported by Trivy since 23-11-2026), also without a fix
+in Debian 13, not in KEV, EPSS 0.0039. Same decision, for the same reason: `vulnerable_code_not_in_execute_path`.
+
 ## The flow
 
 Per vulnerability, not per finding: first group the findings of the same vulnerability.
