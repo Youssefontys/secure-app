@@ -28,14 +28,20 @@ when checking them:
 Severity alone therefore says little about this image. What counts is whether the vulnerable code is there, whether it
 runs, and whether an attacker can reach it.
 
+In week 11 psycopg-binary went, with its own copies of libpq, OpenSSL and krb5 that the scan did not see; the libpq of
+Debian came in its place (MIT-43). That made krb5 visible: 56 more HIGH findings, 14 vulnerabilities in each of its 4
+client libraries (lab run 43919960192, tag `sq3-measurement`, 16-11-2026). 11 are in kadmind or the KDC, Kerberos
+servers that are not in the image: `vulnerable_code_not_present`. 3 are in code that libkrb5 shares with the KDC, which
+an attacker only reaches through a Kerberos server, and the app talks to none; the security test checks that:
+`vulnerable_code_cannot_be_controlled_by_adversary`. More findings, but each one now has an owner who updates it.
+
 On 21-11-2026 the scan blocked a pull request that changed no package: CVE-2026-124709, published after the last build,
 a memory leak in the QUIC server of OpenSSL 3.5.7 (libssl3t64, openssl and openssl-provider-legacy), without a fix in
-Debian 13. Not in KEV, EPSS 0.0057. All three are in the base image: coreutils needs libssl, ca-certificates needs the
-openssl program. Measured on 21-11-2026 in the running container of an image with this base image: no file that links
-libssl names a QUIC server function. The app listens only on TCP port 5000, and QUIC needs UDP:
-`vulnerable_code_not_in_execute_path`. The OpenSSL copies that
-cryptography and psycopg-binary carry in their own wheels are not seen by the scan, and neither offers a QUIC server
-that the app could call.
+Debian 13. Not in KEV, EPSS 0.0057. All three are needed: libpq, krb5 and coreutils need libssl, ca-certificates needs
+the openssl program. Measured in the running container: no file that links libssl names a QUIC server function, the app
+listens only on TCP port 5000, and QUIC needs UDP: `vulnerable_code_not_in_execute_path`. The OpenSSL that cryptography
+carries in its own wheel (4.0.3) does contain the QUIC server, but the scan does not see that copy (the limit of
+sub-question 3), and cryptography offers no QUIC that the app could call.
 
 On 23-11-2026, in the rebuild of this repository, the scan found a second one in the same QUIC code: CVE-2026-107494,
 retirement frames queued without a limit (published 18-11-2026, reported by Trivy since 23-11-2026), also without a fix

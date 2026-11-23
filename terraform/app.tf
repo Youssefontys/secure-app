@@ -22,9 +22,7 @@ locals {
   }
   app_settings = merge(
     {
-      # The root certificates of Debian, for sslrootcert=system: the own OpenSSL of psycopg-binary does not find them
-      # itself. With the libpq of Debian (week 11) this line goes.
-      SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
+      # sslrootcert=system: the OpenSSL of Debian finds the root certificates itself, no SSL_CERT_FILE needed (MIT-43).
       DATABASE_URL = local.database_url_app
       # Container Apps only puts the rightmost address in X-Forwarded-For: one proxy (MC-18).
       TRUSTED_PROXIES  = "1"
@@ -215,10 +213,6 @@ resource "azurerm_container_app_job" "schema" {
       env {
         name  = "SCHEMA_SQL"
         value = file("${path.module}/../db/schema.sql")
-      }
-      env {
-        name  = "SSL_CERT_FILE"
-        value = local.app_settings.SSL_CERT_FILE
       }
     }
   }
