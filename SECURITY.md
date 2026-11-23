@@ -21,7 +21,7 @@ Attack only your own copy, locally (`python scripts/deployment.py local`) or in 
 
 If you test in good faith and within the scope above, I consider it authorised, and I will not report you or take any other action against you for it. Good faith means:
 
-- only your own copy, or the deployment on Azure when the owner has said so, and then by the rules given with it;
+- only your own copy, or the deployment on Azure when the owner has said so, and then by the rules given with it (for the hacking week: `REDTEAM.md`);
 - no denial of service, no social engineering, and no data of others beyond what you need to show the finding;
 - you stop and report as soon as you have found something, and keep it private until it is fixed.
 
