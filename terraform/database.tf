@@ -28,7 +28,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
     # Stop already at the plan if this subscription may not create PostgreSQL here, not only after a quarter of an hour.
     precondition {
       condition     = data.azapi_resource_action.postgres_capabilities.output.value[0].restricted != "Enabled"
-      error_message = "This subscription may not create PostgreSQL in ${var.location} (restricted). Choose another region with -var location=..., for example northeurope."
+      error_message = "This subscription may not create PostgreSQL in ${var.location} (restricted). Choose another region with -var location=..."
     }
   }
 }
