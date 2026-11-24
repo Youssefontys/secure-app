@@ -214,9 +214,14 @@ def login_code():
         return render_template("login_code.html")
 
     if error := check_code(user_id):
+        # The own typos of this login, to leave out of the message after it.
+        if not error.minutes:
+            session["pending_failures"] = session.get("pending_failures", 0) + 1
         return render_template("login_code.html", error=error.message), *throttle.refusal(error.minutes)
+    own = session.get("pending_failures", 0)
     # Only now logged in; start_session throws the half login away completely.
     start_session(user_id, session["pending_version"])
+    report_wrong_codes(user_id, own)
     events.event("login_ok", user_id=user_id, with_2fa=True)
     return redirect(url_for("notes.index"))
 
@@ -266,9 +271,11 @@ def login_recover():
     if row is None:
         return render_template("login_recover.html", error="Incorrect recovery code."), 400
     throttle.succeeded(recovery_limit)
+    own = session.get("pending_failures", 0)
     start_session(user_id, row.session_version)
     events.event("recovery_used", user_id=user_id)
     flash("Your recovery code has been used. Set up two-step verification again with your new phone.")
+    report_wrong_codes(user_id, own)
     return redirect(url_for("account.setup_2fa"))
 
 
@@ -352,4 +359,19 @@ def check_code(user_id):
         return None
     # Wrong, or already used: the attempt has already been counted.
     events.event("totp_failed", user_id=user_id)
+    # Outside a session (login, forgot password) also for the message at the next login; an own typo on the
+    # profile page is no news to the user.
+    if g.user is None:
+        query("UPDATE users SET totp_failures = totp_failures + 1 WHERE id = %s", (user_id,))
     return CodeError("Incorrect or already used code.", 0)
+
+
+# After a login: how many wrong codes since the previous one, without the own typos of this login. Read and set back
+# to 0 in one statement, so two logins at the same moment do not both report them. Only now, after the last factor:
+# whoever has only the password learns nothing.
+def report_wrong_codes(user_id, own):
+    row = query("WITH old AS (SELECT totp_failures FROM users WHERE id = %s FOR UPDATE)"
+                " UPDATE users SET totp_failures = 0 FROM old WHERE users.id = %s RETURNING old.totp_failures",
+                (user_id, user_id), one=True)
+    if (n := (row.totp_failures if row else 0) - own) > 0:
+        flash(f"Since your last login, your two-step code was entered incorrectly {n} time{'' if n == 1 else 's'}.")
