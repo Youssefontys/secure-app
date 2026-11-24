@@ -21,6 +21,10 @@ from db import query
 bp = Blueprint("auth", __name__)
 
 PENDING_MAX_SECONDS = 300
+# A session ends after 30 minutes without a request, and 8 hours after the login however active (MIT-29, MC-04).
+# OWASP: 15 to 30 minutes without activity for an application with little at stake.
+IDLE_MAX_SECONDS = 30 * 60
+SESSION_MAX_SECONDS = 8 * 3600
 CodeError = namedtuple("CodeError", "message minutes")
 SETUP_ENDPOINTS = {"account.setup_2fa", "account.qr_2fa"}
 # The only routes without a login; every other route is closed by default (MIT-24).
@@ -49,20 +53,29 @@ def load_user():
     user_id = session.get("user_id")
     if user_id is None or request.endpoint == "static":
         return
+    # The times are in the signed cookie, so nobody can change them. A cookie from before these two times has neither,
+    # and so ends too: one new login after the update. Not logged: ending a session that sat still is not an attack.
+    now = int(time.time())
+    if now - session.get("seen", 0) > IDLE_MAX_SECONDS or now - session.get("since", 0) > SESSION_MAX_SECONDS:
+        session.clear()
+        flash("Your session has expired. Please log in again.")
+        return
     user = query("SELECT id, username, session_version, totp_enabled FROM users WHERE id = %s", (user_id,), one=True)
     if user is None or user.session_version != session.get("session_version"):
         events.event("session_rejected", user_id=user_id)
         session.clear()
         flash("Your session is no longer valid. Please log in again.")
         return
+    session["seen"] = now
     g.user = user
 
 
-# A fresh session for this user, with the current session version.
+# A fresh session for this user, with the current session version, and the time of the login.
 def start_session(user_id, version):
     session.clear()
     session["user_id"] = user_id
     session["session_version"] = version
+    session["since"] = session["seen"] = int(time.time())
 
 
 # After an UPDATE that also raises session_version: other sessions expire, the current one gets the new version.
@@ -122,7 +135,7 @@ def register():
         # The form itself blocks this with pattern and maxlength: reaching here is not a browser typo.
         events.event("input_malformed", field="username")
         return render_template("auth.html", error="Choose a username of 3 to 20 characters: letters, digits and _."), 400
-    if error := passwords.password_problem(password):
+    if error := passwords.password_problem(password, username=username):
         return render_template("auth.html", error=error), 400
     # Count only just before hashing: only a registration that really calculates counts (MIT-30, MC-10).
     if minutes := throttle.attempt(throttle.limit("register_ip", throttle.client_ip(request.remote_addr))):
@@ -201,9 +214,14 @@ def login_code():
         return render_template("login_code.html")
 
     if error := check_code(user_id):
+        # The own typos of this login, to leave out of the message after it.
+        if not error.minutes:
+            session["pending_failures"] = session.get("pending_failures", 0) + 1
         return render_template("login_code.html", error=error.message), *throttle.refusal(error.minutes)
+    own = session.get("pending_failures", 0)
     # Only now logged in; start_session throws the half login away completely.
     start_session(user_id, session["pending_version"])
+    report_wrong_codes(user_id, own)
     events.event("login_ok", user_id=user_id, with_2fa=True)
     return redirect(url_for("notes.index"))
 
@@ -253,9 +271,11 @@ def login_recover():
     if row is None:
         return render_template("login_recover.html", error="Incorrect recovery code."), 400
     throttle.succeeded(recovery_limit)
+    own = session.get("pending_failures", 0)
     start_session(user_id, row.session_version)
     events.event("recovery_used", user_id=user_id)
     flash("Your recovery code has been used. Set up two-step verification again with your new phone.")
+    report_wrong_codes(user_id, own)
     return redirect(url_for("account.setup_2fa"))
 
 
@@ -268,7 +288,7 @@ def forgot_password():
 
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
-    if problem := passwords.password_problem(password, request.form.get("password_repeat", "")):
+    if problem := passwords.password_problem(password, request.form.get("password_repeat", ""), username):
         return render_template("login_forgot.html", error=problem), 400
     # Reachable without a password, so the same counters as at login: per address and per name per address.
     limits = throttle.password_limits(username, request.remote_addr)
@@ -308,7 +328,12 @@ def logout():
         query("UPDATE users SET session_version = session_version + 1 WHERE id = %s", (g.user.id,))
         events.event("logout")
     session.clear()
-    return redirect(url_for("auth.login"))
+    response = redirect(url_for("auth.login"))
+    # The browser also empties its cache and storage of this site (OWASP). Not "cookies": a browser clears those for the
+    # whole registrable domain, here all of azurecontainerapps.io and so the apps of others too; the session cookie is
+    # gone already through session.clear().
+    response.headers["Clear-Site-Data"] = '"cache", "storage"'
+    return response
 
 
 # Checks the TOTP code from the form: None if it is right, otherwise a CodeError.
@@ -334,4 +359,19 @@ def check_code(user_id):
         return None
     # Wrong, or already used: the attempt has already been counted.
     events.event("totp_failed", user_id=user_id)
+    # Outside a session (login, forgot password) also for the message at the next login; an own typo on the
+    # profile page is no news to the user.
+    if g.user is None:
+        query("UPDATE users SET totp_failures = totp_failures + 1 WHERE id = %s", (user_id,))
     return CodeError("Incorrect or already used code.", 0)
+
+
+# After a login: how many wrong codes since the previous one, without the own typos of this login. Read and set back
+# to 0 in one statement, so two logins at the same moment do not both report them. Only now, after the last factor:
+# whoever has only the password learns nothing.
+def report_wrong_codes(user_id, own):
+    row = query("WITH old AS (SELECT totp_failures FROM users WHERE id = %s FOR UPDATE)"
+                " UPDATE users SET totp_failures = 0 FROM old WHERE users.id = %s RETURNING old.totp_failures",
+                (user_id, user_id), one=True)
+    if (n := (row.totp_failures if row else 0) - own) > 0:
+        flash(f"Since your last login, your two-step code was entered incorrectly {n} time{'' if n == 1 else 's'}.")

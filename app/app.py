@@ -36,10 +36,16 @@ if setting("TRUSTED_PROXIES", "0", ("0", "1")) == "1":
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 # Safe by default: the session cookie only over HTTPS (MC-04). Locally, on HTTP, compose.yaml turns this off.
 app.config["SESSION_COOKIE_SECURE"] = setting("HTTPS_ONLY", "1", ("0", "1")) == "1"
+# __Host- (MC-04): only over HTTPS, without Domain and with Path=/, so no other site can set or overwrite this cookie.
+# That matters on Azure without an own domain: azurecontainerapps.io is not on the Public Suffix List, so any container
+# app of any Azure customer may set a cookie for all of azurecontainerapps.io, and the browser sends it here too. The
+# app only reads __Host-session, which nobody else can set. Locally, on HTTP, the prefix is not allowed: the plain name.
+app.config["SESSION_COOKIE_NAME"] = "__Host-session" if app.config["SESSION_COOKIE_SECURE"] else "session"
 # Not sent with a form from another site (MC-05); the CSRF token is the second layer.
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-# Flask refuses a cookie whose signature is older; without this line 31 days (MIT-29, MC-04).
-# The app writes the cookie mainly at login, so this is about 8 hours after the login.
+# Flask refuses a cookie whose signature is older; without this line 31 days (MIT-29, MC-04). The app writes the cookie
+# on every request, so the real limits are in auth.py (30 minutes without a request, 8 hours after the login); this
+# stays as a second lock, in Flask itself.
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 # The largest form is a note of 250 characters; more is refused before it is read (MC-10).
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024

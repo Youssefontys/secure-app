@@ -20,7 +20,10 @@ CREATE TABLE users (
     -- is refused, so every code works only once (MIT-07).
     totp_last_step    BIGINT,
     -- SHA-256 of the recovery code (MIT-11); the code itself is stored nowhere.
-    recovery_hash     TEXT
+    recovery_hash     TEXT,
+    -- Wrong codes outside a session (login, forgot password) since the last login: the next login shows how many
+    -- and sets it back to 0. Not in auth_throttle, whose counters start again after 15 minutes and are cleaned up.
+    totp_failures     INTEGER NOT NULL DEFAULT 0
 );
 
 -- Attempt limits (MIT-06, MIT-10), see app/throttle.py. The key is an HMAC of what is
