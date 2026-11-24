@@ -5,7 +5,10 @@
 name: Deploy
 
 on:
-  workflow_run:
+  # Looks like the trigger zizmor warns about on sight, but the jobs below never check out or run code from the
+  # triggering run: only read-only `gh api` calls, with the SHA through an env var, never templated into a script.
+  # The `if:` on changed guards the rest: never a workflow_run whose own event was a pull_request, and never a fork.
+  workflow_run:  # zizmor: ignore[dangerous-triggers] guarded in the job below, see the comment above
     workflows: [Image]
     types: [completed]
     branches: [main]

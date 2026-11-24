@@ -5,7 +5,7 @@ psycopg==3.3.9          # PostgreSQL driver in pure Python, with the libpq of De
 psycopg-pool==3.3.3     # one connection per request opened a fresh TLS handshake every time; a small pool reuses them (MC-10)
 segno==1.6.6            # QR code for setting up two-step verification; pure Python, no dependencies of its own
 cryptography==50.0.2    # AES-256-GCM for the TOTP secret and the notes, and Argon2id for passwords, through OpenSSL
-gunicorn==27.0.0        # WSGI server for production, instead of the development server of Flask (MC-14); no dependencies of its own
+gunicorn==27.0.1        # WSGI server for production, instead of the development server of Flask (MC-14); no dependencies of its own
 
 blinker==1.9.0          # via flask: internal signals (events inside Flask)
 cffi==2.1.1             # via cryptography: the link between Python and C code
