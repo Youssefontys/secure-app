@@ -19,6 +19,8 @@ permissions: {}
 env:
   # Pinned on version and digest (MIT-03); Dependabot does not see an image in a run line, so you update it yourself.
   TRIVY: aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222
+  HADOLINT: hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+  ZIZMOR: ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
 
 jobs:
   # On a pull request, only with read rights: on a pull request from a fork GitHub gives no more anyway.
@@ -34,6 +36,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # The Dockerfile itself, before it is even built: a style or security mistake (an unpinned tag,
+      # a root user, ADD instead of COPY) is cheaper to catch here than in a scan of the finished image.
+      - &lint
+        name: Lint the Dockerfile
+        run: docker run --rm -i "$HADOLINT" < app/Dockerfile
+
+      # The workflows themselves, next to CodeQL's own "actions" analysis: an unpinned action, a dangerous trigger or a
+      # template-injection risk is caught here, not after it already reached main. The run's own token (MIT-34, no extra
+      # permission) puts it online, so it also checks a pinned commit against the tag it claims to be.
+      - &zizmor
+        name: Lint the workflows (zizmor)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker run --rm -v "$PWD:/scan" -w /scan -e GH_TOKEN "$ZIZMOR" .
 
       # ghcr.io wants lower case; the label links the package to this repo.
       - &build
@@ -118,8 +135,15 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Signing, at the end: a Sigstore certificate through the OIDC token of this job, and storing the attestations.
+      id-token: write
+      attestations: write
     steps:
       - *checkout
+      - *lint
+      # No zizmor here: it gets the token of the job, and in this job that may push packages and write attestations.
+      # The workflows on main only got there through a pull request, whose required check ran zizmor with a read-only
+      # token; a tool from outside gets no more rights than it needs (MIT-34).
 
       # The tag app-<tree> never moves: if the image of this app/ is on ghcr.io already, that one is pulled, scanned again
       # with the vulnerabilities of today and given the tag of this commit, instead of a new build under the same tag.
@@ -153,3 +177,25 @@ jobs:
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push --all-tags "$IMAGE"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")
+          echo "DIGEST=${digest#*@}" >> "$GITHUB_ENV"
+
+      # Signed proof, on ghcr.io next to the image, that this image and this SBoM come from this workflow on main
+      # (GitHub's artifact attestations, signed with Sigstore). Deploy and deploy_azure.py check both before deploying.
+      # A reused image gets them again, from this run: same image, same digest. No storage record: that is an
+      # organisation feature, and it would need one more permission.
+      - name: Sign the provenance of the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Sign the SBoM of the image
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true

@@ -5,7 +5,10 @@
 name: Deploy
 
 on:
-  workflow_run:
+  # Looks like the trigger zizmor warns about on sight, but the jobs below never check out or run code from the
+  # triggering run: only read-only `gh api` calls, with the SHA through an env var, never templated into a script.
+  # The `if:` on changed guards the rest: never a workflow_run whose own event was a pull_request, and never a fork.
+  workflow_run:  # zizmor: ignore[dangerous-triggers] guarded in the job below, see the comment above
     workflows: [Image]
     types: [completed]
     branches: [main]
@@ -55,7 +58,10 @@ jobs:
     environment: azure
     permissions:
       id-token: write
+      # Reading the signatures of the image, before deploying it.
+      attestations: read
     env:
+      GH_TOKEN: ${{ github.token }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -71,6 +77,14 @@ jobs:
           docker pull --quiet "ghcr.io/${GITHUB_REPOSITORY,,}:app-$TREE"
           image=$(docker inspect --format '{{index .RepoDigests 0}}' "ghcr.io/${GITHUB_REPOSITORY,,}:app-$TREE")
           case "$image" in ghcr.io/*@sha256:*) echo "Deploying $image" ;; *) echo "No digest found for app-$TREE."; exit 1 ;; esac
+          # Only an image that CI-image.yml built and signed on main, with its SBoM: gh checks the Sigstore signature, and
+          # that the signer was that workflow, in this repo, on main. Anything else is not deployed.
+          for type in https://slsa.dev/provenance/v1 https://cyclonedx.org/bom; do
+            gh attestation verify "oci://$image" --repo "$GITHUB_REPOSITORY" --predicate-type "$type" --source-ref refs/heads/main \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/CI-image.yml" > /dev/null \
+              || { echo "No valid signature ($type) from CI-image.yml on main for $image; not deploying."; exit 1; }
+          done
+          echo "Signed by CI-image.yml on main: the image and its SBoM."
           token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
           az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" --federated-token "$token" \

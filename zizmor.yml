@@ -1,0 +1,8 @@
+# zizmor's own default wants 7 days before a pull request is even opened (MC-11); this project's own, more specific
+# policy (.github/dependabot.yml) is graduated by how big the change is: 3 days by default, 7 for a major version,
+# 3 for a minor one and 1 for a patch. That is a deliberate choice, documented in plan.md and the research report,
+# not a gap: a lower number here than 7 is not a finding.
+rules:
+  dependabot-cooldown:
+    config:
+      days: 3

@@ -15,20 +15,23 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# Then remove pip itself: the app does not use it, and pip brings its own copies of urllib3, msgpack and
-# setuptools, in which Trivy found known vulnerabilities (MC-11, research subquestion 1).
-RUN pip install --no-cache-dir -r requirements.txt \
+# Only a file whose sha256 is in requirements.txt is installed: a changed package on PyPI or on the way stops the build
+# (MIT-03). Dependabot updates the hashes with every new version. Then remove pip itself: the app does not use it, and
+# pip brings its own copies of urllib3, msgpack and setuptools, in which Trivy found known vulnerabilities (MC-11,
+# research subquestion 1).
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
  && pip uninstall --yes pip
 
 COPY . .
 
 # An ordinary user without a shell and without write access to the code: whoever takes over
-# the app is not root and cannot change the code (MC-14).
+# the app is not root and cannot change the code (MC-14). A fixed numeric id, not only a name: a host
+# outside the container (a volume, an orchestrator's runAsUser) cannot resolve a name from /etc/passwd.
 # Then remove the setuid and setgid bit from every program, so mount, su and passwd also run with the rights
 # of that user and not as root (MIT-42); the VEX statements for mount rely on this.
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin app \
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin --uid 10001 app \
  && find / -xdev -type f -perm /6000 -exec chmod a-s {} +
-USER app
+USER 10001
 
 EXPOSE 5000
 
