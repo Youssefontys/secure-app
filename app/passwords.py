@@ -1,6 +1,7 @@
 # Rules for a new password, the hashing and the check: one place for all routes.
 
 import os
+from pathlib import Path
 
 from cryptography.exceptions import InvalidKey
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
@@ -10,6 +11,11 @@ from db import query
 # 12 to 64 characters
 PASSWORD_MIN = 12
 PASSWORD_MAX = 64
+# Much-used and leaked passwords that the length rule lets through (MIT-13, MC-03): of the 100,000 most used ones of the
+# NCSC (from leaks; SecLists, MIT license, commit 1a7bb9127eca), the 1,197 of 12 to 64 characters, in lower case. NIST
+# SP 800-63B-4: large enough for what an attacker tries before the attempt limit (MIT-10), and no larger. Change
+# PASSWORD_MIN or PASSWORD_MAX, and filter the list again.
+_COMMON = frozenset(Path(__file__).with_name("common_passwords.txt").read_text(encoding="utf-8").splitlines())
 # Argon2id with the minimum setting of OWASP: 19 MiB, 2 iterations, 1 thread (MIT-19).
 _PARAMS = {"memory_cost": 19456, "iterations": 2, "lanes": 1}
 # This is how a hash with these settings starts (PHC format); another one gets a new hash at the login.
@@ -26,9 +32,14 @@ _NO_ACCOUNT = hash_password("no account")
 
 
 # The error message if the new password is not allowed, otherwise None; repeat only where the form repeats it.
-def password_problem(password, repeat=None):
+# Not the own username either (NIST: context-specific words).
+def password_problem(password, repeat=None, username=None):
     if not PASSWORD_MIN <= len(password) <= PASSWORD_MAX:
         return f"Choose a password of {PASSWORD_MIN} to {PASSWORD_MAX} characters."
+    if password.lower() in _COMMON:
+        return "This password is on a list of much-used and leaked passwords; choose another one."
+    if username and username.lower() in password.lower():
+        return "Your password may not contain your username."
     if repeat is not None and password != repeat:
         return "The two passwords do not match."
     return None

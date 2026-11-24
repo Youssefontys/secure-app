@@ -117,7 +117,7 @@ def refuse_without_both_factors():
 @bp.route("/password", methods=["POST"])
 def change_password():
     password = request.form.get("password", "")
-    if error := passwords.password_problem(password, request.form.get("password_repeat", "")):
+    if error := passwords.password_problem(password, request.form.get("password_repeat", ""), g.user.username):
         return render_account(error, 400)
     if refused := refuse_without_both_factors():
         return refused

@@ -26,6 +26,20 @@ def run():
     check("change, two different ones", req(a, "/account/password", {"password": PW2, "password_repeat": PW})[0], 400)
     check("logging in without the rule (old password keeps working)", loc(req(client(), "/login", {"username": "testacc3", "password": PW})), "302 /login/2fa")
 
+    print("== much-used and leaked passwords, and the own username (MIT-13, MC-03)")
+    COMMON = "This password is on a list of much-used and leaked passwords; choose another one."
+    OWN = "Your password may not contain your username."
+    check("register with one from the list, also in other case: refused",
+          [answer(req(client(), "/register", {"username": f"common{i}", "password": p})) for i, p in enumerate(("qwerty123456", "1QAZ2WSX3EDC"))],
+          [(400, COMMON)] * 2)
+    check("  with the own username in it, in other case: refused",
+          answer(req(client(), "/register", {"username": "ownname", "password": "my-OwnName-password"})), (400, OWN))
+    check("  change to one from the list, or with the own username: refused",
+          [answer(req(a, "/account/password", {"password": p, "password_repeat": p})) for p in ("passwordpassword", "testacc3-password")],
+          [(400, COMMON), (400, OWN)])
+    check("  forgot password with one from the list: refused, before any counter",
+          answer(forgot(client(), "testacc3", "x", "000000", pw="123456789012")), (400, COMMON))
+
     print("== sessions")
     a2 = login("testacc3", sec)
     change = {"password": PW2, "password_repeat": PW2}
