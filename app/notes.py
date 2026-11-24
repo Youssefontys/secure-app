@@ -39,16 +39,20 @@ def index():
 
 
 # Title and body from the form, plus an error message if one is empty or too long.
+# The form itself already blocks this with required and maxlength (MC-02): reaching here means a request
+# that did not come from the form, so a log line and not just a quiet 400 (MC-02).
 def read_note_form():
     title = request.form.get("title", "").strip()
     body = request.form.get("body", "").strip()
-    error = None
+    error = field = None
     if not title or not body:
-        error = "Enter a title and a note."
+        error, field = "Enter a title and a note.", "title" if not title else "body"
     elif len(title) > TITLE_MAX:
-        error = f"The title can be at most {TITLE_MAX} characters."
+        error, field = f"The title can be at most {TITLE_MAX} characters.", "title"
     elif len(body) > BODY_MAX:
-        error = f"The note can be at most {BODY_MAX} characters."
+        error, field = f"The note can be at most {BODY_MAX} characters.", "body"
+    if error:
+        events.event("input_malformed", field=field)
     return title, body, error
 
 
@@ -76,9 +80,13 @@ def readable(note):
 
 
 # The note of the logged-in user, otherwise 404: someone else's note also seems not to exist (MIT-15).
+# The extra query only runs for a 404, so a real note and a guessed one take the same two queries: no new
+# timing difference between "not mine" and "does not exist" (MC-02).
 def own_note(note_id):
     note = query("SELECT id, title, body FROM notes WHERE id = %s AND user_id = %s", (note_id, g.user.id), one=True)
     if note is None:
+        if query("SELECT 1 FROM notes WHERE id = %s", (note_id,), one=True):
+            events.event("authz_fail", note_id=note_id)
         abort(404)
     return readable(note)
 
