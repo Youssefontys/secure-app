@@ -16,6 +16,16 @@ import urllib.error, urllib.parse, urllib.request
 # under both names, with the same results.
 sys.modules.setdefault("securitytest", sys.modules[__name__])
 TESTS = ("twofactor", "password", "bruteforce", "note", "encryption", "appsec", "logging")
+# A readable banner per file, printed above its checks.
+TOPICS = {
+    "twofactor": "AUTHENTICATION",
+    "password": "PASSWORD STORAGE",
+    "bruteforce": "BRUTE FORCE PROTECTION",
+    "note": "NOTES",
+    "encryption": "ENCRYPTION",
+    "appsec": "APPLICATION SECURITY",
+    "logging": "LOGGING AND MONITORING",
+}
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 B = "http://127.0.0.1:5000"
@@ -209,7 +219,7 @@ if __name__ == "__main__":
     full = chosen == list(TESTS)
     sql("DELETE FROM auth_throttle; DELETE FROM users;")
     for name in chosen:
-        print(f"\n#### {name}test.py")
+        print(f"\n== TESTS FOR {TOPICS[name]} ({name}test.py) ==")
         began = time.monotonic()
         importlib.import_module(f"{name}test").run()
         print(f"     ({time.monotonic() - began:.0f} s)")

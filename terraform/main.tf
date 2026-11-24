@@ -13,7 +13,7 @@ locals {
   name   = "notes"
   unique = "${local.name}-${random_string.suffix.result}"
   tags = {
-    app        = "secure-application"
+    app        = "secure-app"
     managed_by = "terraform"
   }
   # Server and database; the password comes separately through PGPASSWORD, so the addresses are no secret.
