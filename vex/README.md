@@ -94,7 +94,8 @@ it does not happen automatically yet.
   the pull request sees that (MC-30, step 6).
 - **The work.** Every new vulnerability of HIGH or CRITICAL in Debian, also without a fix, blocks every pull request
   until there is a decision, also a pull request that only changes the README.
-- **A vulnerability that becomes known after the build** is only seen by the scan at the next pull request or push.
+- **A vulnerability that becomes known after the build** is seen within a day by the daily Rescan (`CI-rescan.yml`,
+  since 20-11-2026), or sooner by the next pull request or push. It runs in the meantime.
 - **The VEX is public.** It tells which vulnerabilities are in the image, and why we think they cannot be reached.
   That is in the SBOM too; the code and the image are already public.
 
