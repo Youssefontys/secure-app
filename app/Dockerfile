@@ -15,9 +15,11 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-# Then remove pip itself: the app does not use it, and pip brings its own copies of urllib3, msgpack and
-# setuptools, in which Trivy found known vulnerabilities (MC-11, research subquestion 1).
-RUN pip install --no-cache-dir -r requirements.txt \
+# Only a file whose sha256 is in requirements.txt is installed: a changed package on PyPI or on the way stops the build
+# (MIT-03). Dependabot updates the hashes with every new version. Then remove pip itself: the app does not use it, and
+# pip brings its own copies of urllib3, msgpack and setuptools, in which Trivy found known vulnerabilities (MC-11,
+# research subquestion 1).
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
  && pip uninstall --yes pip
 
 COPY . .
