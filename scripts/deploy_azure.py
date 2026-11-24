@@ -6,8 +6,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import deployment
 from deployment import REPO, ask, check_tools, gh, git, github_repo, hackmode, stop, terraform, yes
@@ -22,6 +25,11 @@ AZ_LOGIN_HELP = """First sign in to Azure: you are not signed in yet, or no subs
 # An email address, as an allowlist (MIT-22); the same rule as the validation of alert_email in terraform/variables.tf.
 EMAIL = r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}"
 EMAILS = rf"-|{EMAIL}(,{EMAIL})*"  # none (-), or addresses separated by commas
+# How long the alerts a deploy fires itself stay without a mail, from each opening (alerts.tf, the rule "deploy"): the
+# same 30 minutes as every alert's pause after a mail, so one number everywhere. They look back 15 minutes, so the last
+# firing comes up to 15 minutes after the last Key Vault read: measured on 20-11-2026, reads until 00:39:29, the apply
+# done at 00:40:20, firings at 00:44, 00:49 and 00:54:31. 15 would have fit by 49 seconds; 20 is no pause Azure allows.
+MUTE_MINUTES = 30
 
 
 # Is the image there, and may everyone pull it? It must: Container Apps does not sign in to ghcr.io.
@@ -58,6 +66,39 @@ def state_region():
     result = subprocess.run([shutil.which("az"), "group", "show", "--name", match.group(1), "--query", "location", "-o", "tsv"],
                             capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+# Opens the window of the rule that holds back the mails a deploy causes itself, from now on for MUTE_MINUTES. Before
+# the first apply the rule does not exist yet, and Terraform gives it a first window itself. A failure only costs a
+# mail about your own deploy, so it warns instead of stopping. Returns the rule's id, so the second opening does not
+# ask Terraform again: every terraform output fetches the state from Azure, about half a minute. Only the opening after
+# Terraform says so: that is the window that counts.
+def mute_own_alerts(rule_id="", announce=True):
+    rule_id = rule_id or output("deploy_mute_rule_id")
+    if not rule_id:
+        return ""
+    az, url = shutil.which("az"), f"https://management.azure.com{rule_id}?api-version=2021-08-08"
+    got = subprocess.run([az, "rest", "--method", "get", "--url", url], capture_output=True, text=True)
+    if got.returncode == 0:
+        rule = json.loads(got.stdout)
+        start = datetime.now(timezone.utc)
+        until = start + timedelta(minutes=MUTE_MINUTES)
+        rule["properties"]["schedule"] = {"effectiveFrom": f"{start:%Y-%m-%dT%H:%M:%S}",
+                                          "effectiveUntil": f"{until:%Y-%m-%dT%H:%M:%S}", "timeZone": "UTC"}
+        # As a file: az is a .cmd on Windows, and cmd.exe mangles the quotes of JSON on the command line.
+        with tempfile.TemporaryDirectory() as folder:
+            body = Path(folder) / "rule.json"
+            body.write_text(json.dumps({key: rule[key] for key in ("location", "tags", "properties") if key in rule}),
+                            encoding="utf-8")
+            put = subprocess.run([az, "rest", "--method", "put", "--url", url, "--body", f"@{body}"],
+                                 capture_output=True, text=True)
+        if put.returncode == 0:
+            if announce:
+                print(f"\n🔕 Mails about this deploy itself (Key Vault reads, a new revision, roles) held back until "
+                      f"{until.astimezone():%H:%M}")
+            return rule_id
+    print("⚠️  Could not hold back the mails about this deploy itself; a mail from the Key Vault alert may follow.")
+    return rule_id
 
 
 # The environment azure in GitHub (MIT-44): only main may deploy, and only after your approval. The three IDs as
@@ -98,8 +139,8 @@ def run():
     print(f"\n☁️  Signed in to Azure, subscription: {subscription}")
 
     # A merge on GitHub does not reach this folder by itself, and both the image tag and Terraform use what is checked
-    # out here: deployed from an older branch, a fix that is already on main quietly stays off Azure (it happened: the
-    # 5-minute wait in alerts.tf never landed). Without a connection the fetch fails, and then this check is skipped.
+    # out here: deployed from an older branch, a fix that is already on main quietly stays off Azure (it happened once,
+    # with an alert fix on 19-11-2026). Without a connection the fetch fails, and then this check is skipped.
     if git("fetch", "origin", "main") is not None and git("merge-base", "--is-ancestor", "origin/main", "HEAD") is None:
         stop("This folder is missing commits that are already on main on GitHub; a merge there does not come here by itself.\n"
              "   💡 Get them first:\n"
@@ -169,9 +210,14 @@ def run():
     if hack["THROTTLE_PAIR_EXEMPT_USERS"]:
         variables.append(f"throttle_pair_exempt_users={hack['THROTTLE_PAIR_EXEMPT_USERS']}")
 
+    # Before Terraform, because its plan already reads the Key Vault secrets while you decide on yes; and again after
+    # it, so a slow yes or a long apply still has the full window behind it.
+    rule_id = mute_own_alerts(announce=False)
+    print()
     # The question for yes stays: this turns on resources that cost money.
     if not terraform("apply", *(f"-var={v}" for v in variables)):
         stop("terraform apply did not work, or you did not type yes; the message is above.")
+    mute_own_alerts(rule_id)
     url = output("app_url")
     if from_github and signed_in:
         setup_github(github)

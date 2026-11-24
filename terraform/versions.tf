@@ -7,7 +7,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "5.13.0"
+      version = "5.14.0"
     }
     random = {
       source  = "hashicorp/random"
@@ -29,7 +29,7 @@ terraform {
 provider "azurerm" {
   # Not registered by default on a new subscription; the schema does not say which ones azurerm registers itself.
   # Exactly as Azure returns them: azurerm compares case, and Azure calls this one microsoft.insights.
-  resource_providers_to_register = ["Microsoft.App", "Microsoft.DBforPostgreSQL", "microsoft.insights", "Microsoft.OperationalInsights"]
+  resource_providers_to_register = ["Microsoft.AlertsManagement", "Microsoft.App", "Microsoft.DBforPostgreSQL", "microsoft.insights", "Microsoft.OperationalInsights"]
 
   features {
     key_vault {
