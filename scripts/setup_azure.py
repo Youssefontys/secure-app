@@ -6,18 +6,15 @@
 # Taken from BOK-SECENGINEER, then adapted; the changes are in the git history. Works on Windows and Linux.
 
 import random
-import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-# Emoji also when the output goes to a pipe or file: Python before 3.15 writes cp1252 there on Windows.
-# A stream without reconfigure (IDLE, a test) can already do Unicode.
-for stream in (sys.stdout, sys.stderr):
-    if hasattr(stream, "reconfigure"):
-        stream.reconfigure(encoding="utf-8")
+# Questions, stopping, az and the UTF-8 output: the same as deployment.py, which started this script.
+import deployment
+from deployment import ask, az, az_error, stop, yes
 
 # backend.conf goes into the root folder of the repo, where deployment.py and terraform init look for it.
 BACKEND_CONF = Path(__file__).resolve().parent.parent / "backend.conf"
@@ -37,42 +34,15 @@ RETRYABLE = ("ResourceNotFound", "ConnectionAbortedError", "PrincipalNotFound", 
 IGNORABLE = ("RoleAssignmentExists", "already exists")
 
 
-# The command as a list of arguments, without a shell; the program through PATH (on Windows az.cmd).
-def as_args(*args):
-    return [shutil.which(args[0]) or args[0], *args[1:]]
-
-
-# Stop with the message, with blank lines around it so it stands out; same form as deployment.py.
-def stop(message, icon="❌"):
-    sys.exit(f"\n{icon} {message}\n\n🛑 Stopping.\n")
-
-
 # Ctrl+C: a message instead of a traceback. What az already made stays; deploy_azure.py then starts this again.
 sys.excepthook = lambda kind, value, tb: (print("\n✋ Stopped with Ctrl+C.\n\n🛑 Stopping.\n") if kind is KeyboardInterrupt
                                          else sys.__excepthook__(kind, value, tb))
 
 
-# The error of az once: the lines Code, Message and Target usually repeat the first line.
-def az_error(stderr):
-    lines = [line for line in stderr.strip().splitlines() if not line.startswith("WARNING:")] or [""]
-    first = lines[0].removeprefix("ERROR: ")
-    return "\n".join([first, *(line for line in lines[1:] if not ((value := line.partition(": ")[2]) and value in first))])
-
-
-# Runs az and returns the output; on an error stop, or None with ignore_error.
-def az(*args, ignore_error=False):
-    result = subprocess.run(as_args("az", *args), capture_output=True, text=True)
-    if result.returncode == 0:
-        return result.stdout.strip()
-    if ignore_error:
-        return None
-    stop(f"ERROR: {az_error(result.stderr)}")
-
-
 # Like az, but try again while Azure is still busy; "already exists" counts as success. Only a new attempt reports itself.
 def az_retry(*args, tries=10, delay=10):
     for attempt in range(1, tries + 1):
-        result = subprocess.run(as_args("az", *args), capture_output=True, text=True)
+        result = subprocess.run([shutil.which("az") or "az", *args], capture_output=True, text=True)
         err = result.stderr.strip()
         if result.returncode == 0 or any(x in err for x in IGNORABLE):
             return result.stdout.strip()
@@ -88,23 +58,14 @@ def assign(role, assignee, scope):
     az_retry("role", "assignment", "create", "--role", role, "--assignee", assignee, "--scope", scope, "-o", "none")
 
 
-# A question with a default; with pattern only an answer that fully meets it.
-# shown replaces what is between the brackets, for example with an option that is not possible.
-def ask_user(question, default=None, pattern=None, shown=None):
-    prompt = f"{question} [{shown or default}]: " if default else f"{question}: "
-    while True:
-        ans = input(prompt).strip() or default
-        if ans is None:
-            continue
-        if pattern is None or re.fullmatch(pattern, ans):
-            return ans
-        print("🤔 That is not possible: only letters, digits and - _ . are allowed.")
-
-
 # The deployment itself.
 print("\n🛡️  Azure Terraform Bootstrap")
 print("👋 Once: the storage in which Terraform remembers what is on Azure. After that Terraform does the rest.")
 print("   Enter always picks what is between [ ].\n")
+# Without a terminal every question would get its default, "Start?" included: then nothing is made, and no traceback.
+if not deployment.INTERACTIVE:
+    stop("Setting up the state storage asks a few questions; run python scripts/deployment.py azure in a terminal.",
+         icon="⌨️")
 
 # 1. Signed in and the subscription; read the IDs only after that, also the tenant of another subscription.
 # Starting az login here is not possible: az() captures the output, and then the subscription choice waits invisibly.
@@ -114,8 +75,8 @@ if not name:
          "   Does it say \"Authentication failed against tenant <ID>\" with AADSTS50076? Then that tenant wants MFA:\n"
          "   az login --tenant <ID>\n   Then run this script again.", icon="🔐")
 print(f"☁️  Signed in to Azure, subscription: {name}")
-if ask_user("🔀 Another subscription? (y/n)", "n").lower() == "y":
-    az("account", "set", "--subscription", ask_user("Subscription ID", pattern=GUID))
+if yes("🔀 Another subscription?"):
+    az("account", "set", "--subscription", ask("Subscription ID", "", GUID))
 sub_id = az("account", "show", "--query", "id", "-o", "tsv")
 tenant_id = az("account", "show", "--query", "tenantId", "-o", "tsv")
 me = az("ad", "signed-in-user", "show", "--query", "id", "-o", "tsv")
@@ -128,16 +89,16 @@ for namespace in ("Microsoft.Storage", "Microsoft.KeyVault", "Microsoft.ManagedI
 
 # 3. Input; with four digits after it the name of the storage stays within the 3 to 24 characters of Azure.
 print("\n📝 A few choices; the default is fine:")
-rg = ask_user("Resource Group name", DEFAULT_RG_NAME, pattern=r"[A-Za-z0-9_.-]{0,89}[A-Za-z0-9_-]")
+rg = ask("Resource Group name", DEFAULT_RG_NAME, r"[A-Za-z0-9_.-]{0,89}[A-Za-z0-9_-]")
 # Strike through with a combining stroke per letter: works in every terminal that shows UTF-8, without colour codes.
 closed = " | ".join("".join(char + "̶" for char in loc) for loc in CLOSED_LOCATIONS)
-location = ask_user("Region", DEFAULT_LOCATION, pattern=r"[a-z0-9]+", shown=f"{DEFAULT_LOCATION} | {closed}")
-container = ask_user("Blob container name", "tfstate", pattern=r"[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]")
-prefix = ask_user("Storage prefix (3-10 chars)", "tfstate", pattern=r"[a-z0-9]{3,10}")
+location = ask("Region", DEFAULT_LOCATION, r"[a-z0-9]+", shown=f"{DEFAULT_LOCATION} | {closed}")
+container = ask("Blob container name", "tfstate", r"[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]")
+prefix = ask("Storage prefix (3-10 chars)", "tfstate", r"[a-z0-9]{3,10}")
 sa_name = f"{prefix}{random.randint(1000, 9999)}"
 suffix = random.randint(1000, 9999)
 mi_name, kv_name, key_name = f"mi-{prefix}-{suffix}", f"kv-{prefix}-{suffix}", "tfstate-cmk-key"
-if ask_user("\n🚦 Start? (y/n)", "y").lower() != "y":
+if ask("\n🚦 Start? (y/n)", "y", r"[yYnN]").lower() != "y":
     print("👋 Nothing created. See you later!")
     sys.exit(0)
 

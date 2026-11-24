@@ -92,7 +92,8 @@ jobs:
           fqdn=$(jq -r .properties.configuration.ingress.fqdn "$RUNNER_TEMP/app.json")
           curl -sSf -o /dev/null --retry 10 --retry-delay 10 --retry-all-errors -w "https://$fqdn/login: %{http_code}\n" "https://$fqdn/login"
           # What only Azure shows, after every deployment: the security test runs against the local stack, without the
-          # ingress. HTTPS only, the headers, and the flags of the session cookie (MIT-21, MIT-23, MIT-40).
+          # ingress. HTTPS only, the headers, and the flags of the session cookie (MIT-21, MIT-23, MIT-40). The same
+          # checks as site_problems() in scripts/deploy_azure.py, after a deployment with Terraform; change both together.
           headers=$(curl -sSf -D - -o /dev/null "https://$fqdn/login" | tr -d '\r')
           for want in "strict-transport-security: max-age=" "content-security-policy: default-src 'self'" \
                       "x-frame-options: DENY" "x-content-type-options: nosniff" "cache-control: no-store"; do
