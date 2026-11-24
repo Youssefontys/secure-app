@@ -135,6 +135,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Signing, at the end: a Sigstore certificate through the OIDC token of this job, and storing the attestations.
+      id-token: write
+      attestations: write
     steps:
       - *checkout
       - *lint
@@ -172,3 +175,25 @@ jobs:
         run: |
           echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push --all-tags "$IMAGE"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")
+          echo "DIGEST=${digest#*@}" >> "$GITHUB_ENV"
+
+      # Signed proof, on ghcr.io next to the image, that this image and this SBoM come from this workflow on main
+      # (GitHub's artifact attestations, signed with Sigstore). Deploy and deploy_azure.py check both before deploying.
+      # A reused image gets them again, from this run: same image, same digest. No storage record: that is an
+      # organisation feature, and it would need one more permission.
+      - name: Sign the provenance of the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Sign the SBoM of the image
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
