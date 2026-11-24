@@ -15,10 +15,12 @@ with app.app.app_context():
 signer = app.app.session_interface.get_signing_serializer(app.app)
 class Stop(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args): return None
-out = []
-for hours in (7, 9, 24 * 30):
-    with mock.patch("time.time", return_value=time.time() - hours * 3600):
-        cookie = signer.dumps({"user_id": u.id, "session_version": u.session_version})
+now, out = time.time(), []
+# Minutes since the login, since the last request, and since Flask signed the cookie (it signs it on every request).
+for since, seen, signed in ((7 * 60, 1, 1), (9 * 60, 1, 1), (60, 29, 29), (60, 31, 31), (30 * 24 * 60,) * 3):
+    with mock.patch("time.time", return_value=now - signed * 60):
+        cookie = signer.dumps({"user_id": u.id, "session_version": u.session_version,
+                               "since": int(now - since * 60), "seen": int(now - seen * 60)})
     try:
         out.append(urllib.request.build_opener(Stop).open(urllib.request.Request("http://127.0.0.1:5000/", headers={"Cookie": "session=" + cookie})).status)
     except urllib.error.HTTPError as e:
@@ -78,6 +80,9 @@ def run():
     check("  a new version with the old key as previous starts", starts("DATA_ENCRYPTION_KEY_VERSION=v2", "DATA_ENCRYPTION_KEY_PREVIOUS=" + "cd" * 32), "start")
     check("without HTTPS_ONLY: cookie only over HTTPS (safe by default)", in_app(
         "import app; print(app.app.config['SESSION_COOKIE_SECURE'])", run=("env", "-u", "HTTPS_ONLY", "python", "-c")).stdout.strip(), "True")
+    check("  and then the cookie is called __Host-session, locally on HTTP session", (in_app(
+        "import app; print(app.app.config['SESSION_COOKIE_NAME'])", run=("env", "-u", "HTTPS_ONLY", "python", "-c")).stdout.strip(),
+        in_app("import app; print(app.app.config['SESSION_COOKIE_NAME'])").stdout.strip()), ("__Host-session", "session"))
 
     print("== input validation (MIT-22)")
     for name in ("<script>alert(1)</script>", "ab", "a" * 21, "with space", "testacc1-b"):
@@ -161,7 +166,8 @@ def run():
     cache = [req(ch, p)[2].get("Cache-Control") for p in ("/", "/account")] + [req(client(), p)[2].get("Cache-Control") for p in ("/login", "/does-not-exist")]
     check("no-store on pages, also logged in and on a 404", cache, ["no-store"] * 4)
     check("  static files may be cached", req(client(), "/static/style.css")[2].get("Cache-Control") != "no-store", True)
-    check("session of 7 hours works, of 9 hours and 30 days not", json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", "302 /login"])
+    check("session 7 hours after the login works, 9 hours not; 29 minutes still works, 31 not; a 30-day-old cookie not",
+          json.loads(in_app(AGE_PROBE).stdout), [200, "302 /login", 200, "302 /login", "302 /login"])
 
     print("== a changed cookie is refused (MC-04)")
     good = next(c.value for c in ch.jar if c.name == "session")
@@ -179,6 +185,9 @@ def run():
           ("302 /login", "302 /login"))
     check("  the signature removed, or only the data left: back to the login", (with_cookie(good.rsplit(".", 1)[0]), with_cookie(good.split(".")[0])),
           ("302 /login", "302 /login"))
+    r = req(ch, "/logout", {})
+    check("logging out: the browser also empties its cache and storage of this site, not all cookies",
+          (loc(r), r[2].get("Clear-Site-Data")), ("302 /login", '"cache", "storage"'))
 
     print("== database role (MIT-27)")
     probe = json.loads(in_app(ROLE_PROBE).stdout)

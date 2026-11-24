@@ -98,10 +98,12 @@ jobs:
                       "x-frame-options: DENY" "x-content-type-options: nosniff" "cache-control: no-store"; do
             grep -qiF -- "$want" <<< "$headers" || { echo "Missing on https://$fqdn/login: $want"; exit 1; }
           done
-          cookie=$(grep -i '^set-cookie: session=' <<< "$headers" || true)
-          for flag in Secure HttpOnly SameSite=Lax; do
-            grep -qi -- "; $flag" <<< "$cookie" || { echo "The session cookie has no $flag."; exit 1; }
+          # __Host- (MC-04): a browser only keeps that cookie with Secure, Path=/ and no Domain, so nobody else can set it.
+          cookie=$(grep -i '^set-cookie: __Host-session=' <<< "$headers" || true)
+          for flag in Secure HttpOnly SameSite=Lax Path=/; do
+            grep -qi -- "; $flag" <<< "$cookie" || { echo "The session cookie __Host-session has no $flag."; exit 1; }
           done
+          if grep -qi -- "; Domain=" <<< "$cookie"; then echo "The session cookie has a Domain; __Host- forbids that."; exit 1; fi
           plain=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "http://$fqdn/login")
           case "$plain" in "301 https://"*) ;; *) echo "HTTP does not go to HTTPS with a 301: $plain"; exit 1 ;; esac
-          echo "Checked on Azure: HTTP goes to HTTPS (301), HSTS, CSP, nosniff, no-store, and the session cookie with Secure, HttpOnly and SameSite=Lax."
+          echo "Checked on Azure: HTTP goes to HTTPS (301), HSTS, CSP, nosniff, no-store, and the session cookie __Host-session with Secure, HttpOnly, SameSite=Lax, Path=/ and no Domain."
