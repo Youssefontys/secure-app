@@ -10,8 +10,10 @@ WORKDIR /app
 # it pulls in (MIT-43). When a newer version comes out, this one disappears from Debian and the build fails: update it then.
 # zlib1g too, on the version Debian Security has (CVE-2026-76844 and CVE-2026-85091): the base image of 15-11-2026 does
 # not have it yet. Pinned the same way; when the base image has it, remove it here.
+# libzstd1 the same way (CVE-2026-124851, HIGH, with a fix): found by Rescan on 25-11-2026 in the published image.
 RUN apt-get update \
  && apt-get install --yes --no-install-recommends libpq5=17.12-0+deb13u1 zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
+    libzstd1=1.5.7+dfsg-1+deb13u1 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
